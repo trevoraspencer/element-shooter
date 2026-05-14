@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Elements - 2D Physics Sandbox</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Michroma&family=Outfit:wght@300;400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="css/style.css" />
+    </head>
+    <body>
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Main Menu -->
+        <div id="main-menu" class="menu-overlay">
+            <div class="orbit-container" aria-hidden="true">
+                <div class="orbit orbit--sm"></div>
+                <div class="orbit orbit--md"></div>
+                <div class="orbit orbit--lg"></div>
+                <div class="orbit orbit--xl"></div>
+                <div class="nucleus-glow"></div>
+            </div>
+            <div class="menu-content">
+                <h1 class="game-title">ELEMENTS</h1>
+                <p class="game-subtitle">2D Physics Sandbox</p>
+                <div class="menu-buttons">
+                    <button class="menu-btn" id="btn-sandbox">Sandbox Mode</button>
+                    <button class="menu-btn" id="btn-adventure">Adventure Mode</button>
+                </div>
+                <div class="settings-row" aria-label="Settings">
+                    <label><input type="checkbox" id="setting-muted" /> Mute</label>
+                    <label
+                        ><input type="checkbox" id="setting-reduced-motion" /> Reduced Motion</label
+                    >
+                    <label
+                        >Volume <input type="range" id="setting-volume" min="0" max="1" step="0.05"
+                    /></label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Element Picker -->
+        <div id="element-picker" class="picker-overlay hidden">
+            <div class="picker-content">
+                <h2>Choose Your Element</h2>
+                <div id="element-grid" class="element-grid"></div>
+                <button class="menu-btn btn-back" id="btn-picker-back">Back</button>
+            </div>
+        </div>
+
+        <!-- Weapon Picker -->
+        <div id="weapon-picker" class="picker-overlay hidden">
+            <div class="picker-content">
+                <h2>Choose Your Weapon</h2>
+                <div id="weapon-grid" class="weapon-grid"></div>
+                <button class="menu-btn btn-back" id="btn-weapon-back">Back</button>
+            </div>
+        </div>
+
+        <!-- Level Select -->
+        <div id="level-select" class="picker-overlay hidden">
+            <div class="picker-content">
+                <h2>Adventure Mode</h2>
+                <div id="level-grid" class="level-grid"></div>
+                <button class="menu-btn btn-back" id="btn-level-back">Back</button>
+            </div>
+        </div>
+
+        <!-- HUD -->
+        <div id="hud" class="hidden">
+            <div id="hud-health" class="hud-bar">
+                <div id="hud-health-fill" class="hud-bar-fill health-fill"></div>
+                <span id="hud-health-text" class="hud-bar-text">100</span>
+            </div>
+            <div id="hud-element-info" class="hud-element-info">
+                <span id="hud-element-symbol">H</span>
+                <span id="hud-element-name">Hydrogen</span>
+            </div>
+            <div id="hud-weapon-info" class="hud-weapon-info">
+                <span id="hud-weapon-name">Photon Blaster</span>
+                <span id="hud-ammo">&infin;</span>
+            </div>
+            <div id="hud-score" class="hud-score">Score: <span id="score-value">0</span></div>
+        </div>
+
+        <!-- Sandbox Toolbar -->
+        <div id="sandbox-toolbar" class="hidden">
+            <div class="toolbar-section">
+                <span class="toolbar-label">Spawn</span>
+                <button class="tool-btn active" data-tool="spawn" title="Click to spawn">+</button>
+                <button class="tool-btn" data-tool="drag" title="Drag elements">&#9995;</button>
+                <button class="tool-btn" data-tool="delete" title="Delete elements">&times;</button>
+            </div>
+            <div class="toolbar-section">
+                <span class="toolbar-label">FX</span>
+                <button class="tool-btn" data-tool="explode" title="Explode">&#128165;</button>
+                <button class="tool-btn" data-tool="freeze" title="Freeze">&#10052;</button>
+                <button class="tool-btn" data-tool="gravity" title="Flip gravity">&udarr;</button>
+            </div>
+            <div class="toolbar-section">
+                <span class="toolbar-label">Team</span>
+                <button class="tool-btn team-btn active" data-team="neutral">N</button>
+                <button class="tool-btn team-btn" data-team="a">A</button>
+                <button class="tool-btn team-btn" data-team="b">B</button>
+            </div>
+            <div class="toolbar-section">
+                <span class="toolbar-label">Time</span>
+                <button class="tool-btn" data-tool="slowmo" title="Slow motion">&#128012;</button>
+                <button class="tool-btn" data-tool="clear" title="Clear all">&#128465;</button>
+            </div>
+            <div class="toolbar-section toolbar-presets">
+                <span class="toolbar-label">Presets</span>
+                <button class="tool-btn preset-btn" data-preset="0" title="Tiny H vs Giant Pu">
+                    H vs Pu
+                </button>
+                <button class="tool-btn preset-btn" data-preset="1" title="Magnet War">
+                    Magnet
+                </button>
+                <button class="tool-btn preset-btn" data-preset="2" title="Noble Gas Escape">
+                    Noble Gas
+                </button>
+                <button class="tool-btn preset-btn" data-preset="3" title="Boss Rush">Boss</button>
+                <button class="tool-btn preset-btn" data-preset="4" title="Random Army">
+                    Random
+                </button>
+            </div>
+            <div class="toolbar-section">
+                <span class="toolbar-label">Element</span>
+                <select id="sandbox-element-select"></select>
+            </div>
+            <div class="toolbar-section">
+                <span class="toolbar-label">Weapon</span>
+                <select id="sandbox-weapon-select">
+                    <option value="none">None</option>
+                </select>
+            </div>
+            <div class="toolbar-section">
+                <span class="toolbar-label" id="entity-count">0/50</span>
+            </div>
+            <button class="tool-btn menu-return" id="btn-sandbox-menu" title="Main Menu">
+                &#9776;
+            </button>
+        </div>
+
+        <!-- Adventure HUD extras -->
+        <div id="adventure-hud" class="hidden">
+            <div id="wave-info" class="wave-info">Wave 1/5</div>
+            <div id="level-name" class="level-name">Hydrogen Fields</div>
+            <button class="tool-btn menu-return" id="btn-adventure-menu" title="Main Menu">
+                &#9776;
+            </button>
+        </div>
+
+        <!-- Pause Overlay -->
+        <div id="pause-overlay" class="menu-overlay hidden" aria-hidden="true">
+            <div class="menu-content">
+                <h2>Paused</h2>
+                <p>Press Esc or P to resume</p>
+            </div>
+        </div>
+
+        <!-- Upgrade Panel -->
+        <div id="upgrade-panel" class="upgrade-panel hidden"></div>
+
+        <!-- Game Over / Level Complete -->
+        <div id="game-over-screen" class="menu-overlay hidden">
+            <div class="menu-content">
+                <h2 id="game-over-title">Game Over</h2>
+                <p id="game-over-text"></p>
+                <div class="menu-buttons">
+                    <button class="menu-btn" id="btn-retry">Retry</button>
+                    <button class="menu-btn" id="btn-to-menu">Main Menu</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scripts -->
+        <script
+            src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.20.0/matter.min.js"
+            integrity="sha384-ZRKYEXtLBVeqs9z1WxyeKutCqnkqolS/r1EUWuoUpG4ZKbnRAIXnHhHdnNuiB6CL"
+            crossorigin="anonymous"
+        ></script>
+        <script src="js/utils.js"></script>
+        <script src="js/elements-data.js"></script>
+        <script src="js/effects.js"></script>
+        <script src="js/element-entity.js"></script>
+        <script src="js/weapons.js"></script>
+        <script src="js/player.js"></script>
+        <script src="js/ai.js"></script>
+        <script src="js/camera.js"></script>
+        <script src="js/sandbox.js"></script>
+        <script src="js/adventure.js"></script>
+        <script src="js/ui.js"></script>
+        <script src="js/main.js"></script>
+    </body>
+</html>

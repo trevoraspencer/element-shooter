@@ -1,0 +1,20 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "entry": [
+        "js/utils.js",
+        "js/elements-data.js",
+        "js/effects.js",
+        "js/element-entity.js",
+        "js/weapons.js",
+        "js/player.js",
+        "js/ai.js",
+        "js/camera.js",
+        "js/sandbox.js",
+        "js/adventure.js",
+        "js/ui.js",
+        "js/main.js"
+    ],
+    "project": ["js/**/*.js"],
+    "ignoreExportsUsedInFile": true,
+    "ignoreDependencies": []
+}
