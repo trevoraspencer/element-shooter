@@ -44,6 +44,13 @@ const SANDBOX_FLOOR_WIDTH = SANDBOX_FLOOR_RIGHT - SANDBOX_FLOOR_LEFT;
 const SANDBOX_FLOOR_CENTER_X = (SANDBOX_FLOOR_LEFT + SANDBOX_FLOOR_RIGHT) / 2;
 const SANDBOX_FLOOR_TOP = 720;
 const SANDBOX_WALL_INSET = 10;
+const SANDBOX_PLATFORM_HEIGHT = 20;
+// Platform definitions (center x/y, width) shared by the physics bodies and rendering.
+const SANDBOX_PLATFORMS = [
+    { x: 500, y: 550, w: 300 },
+    { x: 1500, y: 550, w: 300 },
+    { x: 1000, y: 400, w: 200 },
+];
 
 class SandboxMode {
     constructor(game) {
@@ -146,43 +153,19 @@ class SandboxMode {
             label: 'wall',
         });
 
-        // Platforms
-        this.plat1 = Bodies.rectangle(500, 550, 300, 20, {
-            isStatic: true,
-            collisionFilter: {
-                category: CAT.PLATFORM,
-                mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
-            },
-            label: 'platform',
-        });
+        // Platforms — built from the shared SANDBOX_PLATFORMS table
+        const platforms = SANDBOX_PLATFORMS.map((p) =>
+            Bodies.rectangle(p.x, p.y, p.w, SANDBOX_PLATFORM_HEIGHT, {
+                isStatic: true,
+                collisionFilter: {
+                    category: CAT.PLATFORM,
+                    mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+                },
+                label: 'platform',
+            }),
+        );
 
-        this.plat2 = Bodies.rectangle(1500, 550, 300, 20, {
-            isStatic: true,
-            collisionFilter: {
-                category: CAT.PLATFORM,
-                mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
-            },
-            label: 'platform',
-        });
-
-        this.plat3 = Bodies.rectangle(1000, 400, 200, 20, {
-            isStatic: true,
-            collisionFilter: {
-                category: CAT.PLATFORM,
-                mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
-            },
-            label: 'platform',
-        });
-
-        this.staticBodies = [
-            this.ground,
-            this.ceiling,
-            this.wallL,
-            this.wallR,
-            this.plat1,
-            this.plat2,
-            this.plat3,
-        ];
+        this.staticBodies = [this.ground, this.ceiling, this.wallL, this.wallR, ...platforms];
         Composite.add(this.game.engine.world, this.staticBodies);
     }
 
@@ -478,7 +461,7 @@ class SandboxMode {
         this.entities = this.entities.filter((e) => {
             if (!e.alive) {
                 // Check for score-giving specials
-                const scoreBonus = getSpecialConfig(e.data.special).scoreBonus || 0;
+                const scoreBonus = e.special.scoreBonus || 0;
                 if (scoreBonus) {
                     this.game.effects.scorePopup(
                         e.body?.position.x || 0,
@@ -491,10 +474,7 @@ class SandboxMode {
             return true;
         });
 
-        this.projectiles = this.projectiles.filter((p) => {
-            if (!p.alive) return false;
-            return true;
-        });
+        this.projectiles = this.projectiles.filter((p) => p.alive);
 
         this.updateEntityCount();
     }
@@ -553,17 +533,11 @@ class SandboxMode {
         ctx.lineTo(groundEnd.x, groundEnd.y);
         ctx.stroke();
 
-        // Platforms — Mario-style gold blocks
-        const plats = [
-            { x: 350, y: 540, w: 300 },
-            { x: 1350, y: 540, w: 300 },
-            { x: 900, y: 390, w: 200 },
-        ];
-
-        for (const p of plats) {
-            const s = camera.worldToScreen(p.x, p.y);
+        // Platforms — Mario-style gold blocks, derived from the physics body centers
+        for (const p of SANDBOX_PLATFORMS) {
+            const s = camera.worldToScreen(p.x - p.w / 2, p.y - SANDBOX_PLATFORM_HEIGHT / 2);
             const w = p.w * camera.zoom;
-            const h = 20 * camera.zoom;
+            const h = SANDBOX_PLATFORM_HEIGHT * camera.zoom;
             const edge = Math.max(2, h * 0.22);
 
             ctx.fillStyle = '#ffc400';

@@ -1,4 +1,8 @@
 // UI: menus, pickers, toolbar wiring
+
+// Sandbox tools that are mutually-exclusive selections (vs. toggles/actions)
+const SELECTABLE_TOOLS = ['spawn', 'drag', 'delete', 'explode', 'freeze'];
+
 class UI {
     constructor(game) {
         this.game = game;
@@ -19,7 +23,7 @@ class UI {
 
         document.getElementById('btn-adventure').addEventListener('click', () => {
             this.hideAll();
-            this.showElementPicker('adventure');
+            this.showElementPicker();
         });
     }
 
@@ -43,8 +47,7 @@ class UI {
             const card = document.createElement('div');
             card.className = 'element-card' + (unlocked ? '' : ' locked');
             card.style.setProperty('--el-color', el.color);
-            const rgb = hexToRgb(el.color);
-            card.style.setProperty('--el-glow', `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`);
+            card.style.setProperty('--el-glow', colorWithAlpha(el.color, 0.15));
             card.style.setProperty('--i', index);
             card.append(
                 this.makeSpan('atomic-num', el.atomicNum),
@@ -67,7 +70,7 @@ class UI {
 
         document.getElementById('btn-weapon-back').addEventListener('click', () => {
             this.hideAll();
-            this.showElementPicker('adventure');
+            this.showElementPicker();
         });
     }
 
@@ -163,36 +166,23 @@ class UI {
                 const tool = btn.dataset.tool;
                 const sandbox = this.game.sandbox;
 
-                switch (tool) {
-                    case 'spawn':
-                    case 'drag':
-                    case 'delete':
-                    case 'explode':
-                    case 'freeze':
-                        // Deactivate others
-                        document.querySelectorAll('[data-tool]').forEach((b) => {
-                            if (
-                                ['spawn', 'drag', 'delete', 'explode', 'freeze'].includes(
-                                    b.dataset.tool,
-                                )
-                            ) {
-                                b.classList.remove('active');
-                            }
-                        });
-                        btn.classList.add('active');
-                        sandbox.currentTool = tool;
-                        break;
-                    case 'slowmo':
-                        sandbox.toggleSlowMo();
-                        btn.classList.toggle('active');
-                        break;
-                    case 'gravity':
-                        sandbox.toggleGravity();
-                        btn.classList.toggle('active');
-                        break;
-                    case 'clear':
-                        sandbox.clearAll();
-                        break;
+                if (SELECTABLE_TOOLS.includes(tool)) {
+                    // Deactivate other selectable tools
+                    document.querySelectorAll('[data-tool]').forEach((b) => {
+                        if (SELECTABLE_TOOLS.includes(b.dataset.tool)) {
+                            b.classList.remove('active');
+                        }
+                    });
+                    btn.classList.add('active');
+                    sandbox.currentTool = tool;
+                } else if (tool === 'slowmo') {
+                    sandbox.toggleSlowMo();
+                    btn.classList.toggle('active');
+                } else if (tool === 'gravity') {
+                    sandbox.toggleGravity();
+                    btn.classList.toggle('active');
+                } else if (tool === 'clear') {
+                    sandbox.clearAll();
                 }
             });
         });
@@ -283,20 +273,20 @@ class UI {
         volume.addEventListener('input', () => setMasterVolume(volume.value));
     }
 
+    makeEl(tag, className, text, style = null) {
+        const el = document.createElement(tag);
+        el.className = className;
+        el.textContent = text;
+        if (style?.color) el.style.color = style.color;
+        return el;
+    }
+
     makeSpan(className, text, style = null) {
-        const span = document.createElement('span');
-        span.className = className;
-        span.textContent = text;
-        if (style?.color) span.style.color = style.color;
-        return span;
+        return this.makeEl('span', className, text, style);
     }
 
     makeDiv(className, text, style = null) {
-        const div = document.createElement('div');
-        div.className = className;
-        div.textContent = text;
-        if (style?.color) div.style.color = style.color;
-        return div;
+        return this.makeEl('div', className, text, style);
     }
 
     showMainMenu() {

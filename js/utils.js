@@ -104,6 +104,12 @@ function dist(x1, y1, x2, y2) {
     return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
 }
 
+// Squared distance — for radius threshold checks, avoids the Math.sqrt in dist().
+// Compare against radius*radius, never the linear radius.
+function dist2(x1, y1, x2, y2) {
+    return (x2 - x1) ** 2 + (y2 - y1) ** 2;
+}
+
 function angle(x1, y1, x2, y2) {
     return Math.atan2(y2 - y1, x2 - x1);
 }
@@ -166,6 +172,38 @@ function updateScreenShake() {
     }
 }
 
+// Clamps a body's horizontal speed, preserving vertical velocity.
+function capHorizontalSpeed(body, maxVel) {
+    if (Math.abs(body.velocity.x) > maxVel) {
+        Matter.Body.setVelocity(body, {
+            x: Math.sign(body.velocity.x) * maxVel,
+            y: body.velocity.y,
+        });
+    }
+}
+
+// Returns true if a solid body (ground/platform/wall) sits directly beneath the
+// given body — used for jump and float-special ground checks. Tests against the
+// active mode's cached static geometry when available (the only bodies that can
+// ground an entity), falling back to a full world walk otherwise.
+function isBodyGrounded(engine, body, radius) {
+    if (!body) return false;
+    const statics = window.game?.getStaticBodies?.();
+    const bodies =
+        statics && statics.length
+            ? statics
+            : engine
+              ? Matter.Composite.allBodies(engine.world)
+              : [];
+    const probe = { x: body.position.x, y: body.position.y + radius + 3 };
+    for (const b of bodies) {
+        if (b === body || b.isSensor) continue;
+        if (b.collisionFilter.category === CAT.PROJECTILE) continue;
+        if (Matter.Bounds.contains(b.bounds, probe)) return true;
+    }
+    return false;
+}
+
 function isCircleOnScreen(x, y, radius, camera, margin = 80) {
     const screen = camera.worldToScreen(x, y);
     const scaledRadius = radius * camera.zoom;
@@ -212,24 +250,31 @@ function trackSound(type, duration) {
     return true;
 }
 
+// Each profile fully describes a synthesized blip: waveform, a frequency
+// envelope (ramps exponentially from→to, or holds a second value with `freqHold`),
+// peak gain, and total duration (also drives the rate limiter).
+const SOUND_PROFILES = {
+    shoot: { wave: 'square', from: 800, to: 200, gain: 0.08, dur: 0.1 },
+    hit: { wave: 'sawtooth', from: 300, to: 80, gain: 0.1, dur: 0.15 },
+    explode: { wave: 'sawtooth', from: 150, to: 30, gain: 0.15, dur: 0.4 },
+    death: { wave: 'sine', from: 500, to: 60, gain: 0.1, dur: 0.5 },
+    pickup: { wave: 'sine', from: 400, to: 800, gain: 0.08, dur: 0.2, ramp: 0.15 },
+    beam: { wave: 'sine', from: 600, freqHold: 650, gain: 0.04, dur: 0.08 },
+    shotgun: { wave: 'square', from: 400, to: 80, gain: 0.12, dur: 0.15 },
+    cannon: { wave: 'sawtooth', from: 200, to: 40, gain: 0.15, dur: 0.3 },
+};
+
 function playSound(type) {
     if (gameSettings.muted || gameSettings.masterVolume <= 0) return;
+
+    const profile = SOUND_PROFILES[type];
+    if (!profile) return;
 
     const ctx = getAudioContext();
     if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const durations = {
-        shoot: 0.1,
-        hit: 0.15,
-        explode: 0.4,
-        death: 0.5,
-        pickup: 0.2,
-        beam: 0.08,
-        shotgun: 0.15,
-        cannon: 0.3,
-    };
-    if (!trackSound(type, durations[type] || 0.2)) return;
+    if (!trackSound(type, profile.dur)) return;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -239,78 +284,15 @@ function playSound(type) {
     const now = ctx.currentTime;
     const volume = gameSettings.masterVolume;
 
-    switch (type) {
-        case 'shoot':
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(800, now);
-            osc.frequency.exponentialRampToValueAtTime(200, now + 0.1);
-            gain.gain.setValueAtTime(0.08 * volume, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-            osc.start(now);
-            osc.stop(now + 0.1);
-            break;
-        case 'hit':
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(300, now);
-            osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
-            gain.gain.setValueAtTime(0.1 * volume, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-            osc.start(now);
-            osc.stop(now + 0.15);
-            break;
-        case 'explode':
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150, now);
-            osc.frequency.exponentialRampToValueAtTime(30, now + 0.4);
-            gain.gain.setValueAtTime(0.15 * volume, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-            osc.start(now);
-            osc.stop(now + 0.4);
-            break;
-        case 'death':
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(500, now);
-            osc.frequency.exponentialRampToValueAtTime(60, now + 0.5);
-            gain.gain.setValueAtTime(0.1 * volume, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-            osc.start(now);
-            osc.stop(now + 0.5);
-            break;
-        case 'pickup':
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(400, now);
-            osc.frequency.exponentialRampToValueAtTime(800, now + 0.15);
-            gain.gain.setValueAtTime(0.08 * volume, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-            osc.start(now);
-            osc.stop(now + 0.2);
-            break;
-        case 'beam':
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(600, now);
-            osc.frequency.setValueAtTime(650, now + 0.05);
-            gain.gain.setValueAtTime(0.04 * volume, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-            osc.start(now);
-            osc.stop(now + 0.08);
-            break;
-        case 'shotgun':
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(400, now);
-            osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
-            gain.gain.setValueAtTime(0.12 * volume, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-            osc.start(now);
-            osc.stop(now + 0.15);
-            break;
-        case 'cannon':
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(200, now);
-            osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
-            gain.gain.setValueAtTime(0.15 * volume, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-            osc.start(now);
-            osc.stop(now + 0.3);
-            break;
+    osc.type = profile.wave;
+    osc.frequency.setValueAtTime(profile.from, now);
+    if (profile.freqHold !== undefined) {
+        osc.frequency.setValueAtTime(profile.freqHold, now + 0.05);
+    } else {
+        osc.frequency.exponentialRampToValueAtTime(profile.to, now + (profile.ramp ?? profile.dur));
     }
+    gain.gain.setValueAtTime(profile.gain * volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + profile.dur);
+    osc.start(now);
+    osc.stop(now + profile.dur);
 }

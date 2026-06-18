@@ -50,6 +50,7 @@ class AIController {
 
         // State
         this.target = null;
+        this.targetDist = Infinity;
         this.state = 'idle'; // idle, chase, attack, retreat, wander
         this.stateTimer = 0;
         this.wanderDir = Math.random() > 0.5 ? 1 : -1;
@@ -112,21 +113,22 @@ class AIController {
     findTarget(entities) {
         const pos = this.entity.body.position;
         let closest = null;
-        let closestDist = Infinity;
+        let closestD2 = Infinity;
 
         for (const ent of entities) {
             if (ent === this.entity || !ent.alive) continue;
             if (ent.team === this.entity.team && this.entity.team !== 'neutral') continue;
 
-            const d = dist(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
-            if (d < closestDist) {
-                closestDist = d;
+            const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
+            if (d2 < closestD2) {
+                closestD2 = d2;
                 closest = ent;
             }
         }
 
         this.target = closest;
-        this.targetDist = closestDist;
+        // One sqrt for the winner; evaluateState compares this against linear ranges.
+        this.targetDist = closest ? Math.sqrt(closestD2) : Infinity;
     }
 
     evaluateState() {
@@ -180,13 +182,7 @@ class AIController {
         }
 
         // Speed cap
-        const maxVel = this.entity.data.speed * 0.4;
-        if (Math.abs(body.velocity.x) > maxVel) {
-            Matter.Body.setVelocity(body, {
-                x: Math.sign(body.velocity.x) * maxVel,
-                y: body.velocity.y,
-            });
-        }
+        capHorizontalSpeed(body, this.entity.data.speed * 0.4);
     }
 
     doChase(dt, engine) {
@@ -206,13 +202,7 @@ class AIController {
         this.entity.aimAngle = angle(body.position.x, body.position.y, tPos.x, tPos.y);
 
         // Speed cap
-        const maxVel = this.entity.data.speed * 0.6;
-        if (Math.abs(body.velocity.x) > maxVel) {
-            Matter.Body.setVelocity(body, {
-                x: Math.sign(body.velocity.x) * maxVel,
-                y: body.velocity.y,
-            });
-        }
+        capHorizontalSpeed(body, this.entity.data.speed * 0.6);
 
         // Jump if target is above
         if (tPos.y < body.position.y - 50 && this.jumpTimer <= 0) {
@@ -259,13 +249,7 @@ class AIController {
         }
 
         // Speed cap
-        const maxVel = this.entity.data.speed * 0.5;
-        if (Math.abs(body.velocity.x) > maxVel) {
-            Matter.Body.setVelocity(body, {
-                x: Math.sign(body.velocity.x) * maxVel,
-                y: body.velocity.y,
-            });
-        }
+        capHorizontalSpeed(body, this.entity.data.speed * 0.5);
     }
 
     doRetreat(dt, engine, effects, projectiles) {
@@ -303,24 +287,7 @@ class AIController {
 
     tryJump(engine) {
         const body = this.entity.body;
-        // Simple ground check
-        const bodies = Matter.Composite.allBodies(engine.world);
-        let grounded = false;
-        for (const b of bodies) {
-            if (b === body || b.isSensor) continue;
-            if (b.collisionFilter.category === CAT.PROJECTILE) continue;
-            if (
-                Matter.Bounds.contains(b.bounds, {
-                    x: body.position.x,
-                    y: body.position.y + this.entity.data.radius + 3,
-                })
-            ) {
-                grounded = true;
-                break;
-            }
-        }
-
-        if (grounded) {
+        if (isBodyGrounded(engine, body, this.entity.data.radius)) {
             const jumpForce = 0.03 * body.mass * Math.min(this.entity.data.speed / 3, 2);
             Matter.Body.applyForce(body, body.position, { x: 0, y: -jumpForce });
             this.jumpTimer = 0.5;

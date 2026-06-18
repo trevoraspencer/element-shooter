@@ -3,16 +3,8 @@
 // Phase status effect for Gold Dynamo shield (10s damage reduction)
 STATUS_EFFECTS.phase_shielded = { takenMul: 0.3, color: '#ffdd44' };
 
-// Boss phase effect definitions — indexed by level number
-const BOSS_PHASE_CONFIG = [
-    { level: 0, name: 'Carbon Colossus' },
-    { level: 1, name: 'Iron Titan' },
-    { level: 2, name: 'Neon Wraith' },
-    { level: 3, name: 'Uranium Emperor' },
-    { level: 4, name: 'Plutonium Overlord' },
-    { level: 5, name: 'Gold Dynamo' },
-    { level: 6, name: 'Supernova Incarnate' },
-];
+// Cap on simultaneous live entities during boss phases (keeps physics stable)
+const MAX_ADVENTURE_ENTITIES = 50;
 
 // Upgrade pool: 7 types, 3 random choices shown after each non-boss wave
 const UPGRADE_POOL = [
@@ -126,6 +118,16 @@ const LEVELS = [
             ai: 'berserker',
             weapon: 'shotgun',
             name: 'Carbon Colossus',
+            phase: [
+                {
+                    op: 'spawnMinions',
+                    el: 'C',
+                    count: [2, 3],
+                    healthMult: 0.5,
+                    spread: { x: 80, y: 40 },
+                },
+                { op: 'effect', kind: 'explosion', color: '#444444', count: 15, speed: 200 },
+            ],
         },
         reward: 'beam',
     },
@@ -177,6 +179,11 @@ const LEVELS = [
             ai: 'aggressive',
             weapon: 'cannon',
             name: 'Iron Titan',
+            phase: [
+                { op: 'magneticPull', team: 'a', radius: 350, force: 0.004 },
+                { op: 'effect', kind: 'explosion', color: '#8888ff', count: 25, speed: 300 },
+                { op: 'effect', kind: 'sparks', color: '#8888ff', count: 20 },
+            ],
         },
         reward: null,
     },
@@ -228,6 +235,17 @@ const LEVELS = [
             ai: 'berserker',
             weapon: 'beam',
             name: 'Neon Wraith',
+            phase: [
+                {
+                    op: 'spawnMinions',
+                    el: 'Ne',
+                    count: 3,
+                    healthSet: 10,
+                    spread: { x: 120, y: 60 },
+                },
+                { op: 'effect', kind: 'glowPulse', color: 'boss', radius: 80 },
+                { op: 'effect', kind: 'explosion', color: '#ff88ff', count: 20, speed: 250 },
+            ],
         },
         reward: 'fusion',
     },
@@ -279,6 +297,18 @@ const LEVELS = [
             ai: 'berserker',
             weapon: 'fusion',
             name: 'Uranium Emperor',
+            phase: [
+                { op: 'effect', kind: 'nuclear' },
+                {
+                    op: 'dangerZones',
+                    count: 3,
+                    radius: 80,
+                    damage: 5,
+                    duration: 8,
+                    y: 720,
+                    color: '#44ff88',
+                },
+            ],
         },
         reward: null,
     },
@@ -333,6 +363,17 @@ const LEVELS = [
             ai: 'berserker',
             weapon: 'fusion',
             name: 'Plutonium Overlord',
+            phase: [
+                { op: 'effect', kind: 'nuclear' },
+                { op: 'aoeDamage', radius: 200, damage: 20, excludeTeam: 'b' },
+                {
+                    op: 'spawnMinions',
+                    el: 'Pu',
+                    count: 2,
+                    healthMult: 0.5,
+                    spread: { x: 100, y: 50 },
+                },
+            ],
         },
         reward: 'gravity',
     },
@@ -388,6 +429,11 @@ const LEVELS = [
             ai: 'aggressive',
             weapon: 'gravity',
             name: 'Gold Dynamo',
+            phase: [
+                { op: 'statusBuff', status: 'phase_shielded', duration: 10 },
+                { op: 'effect', kind: 'glowPulse', color: '#ffdd44', radius: 80 },
+                { op: 'effect', kind: 'explosion', color: '#ffdd44', count: 20, speed: 250 },
+            ],
         },
         reward: null,
     },
@@ -446,6 +492,10 @@ const LEVELS = [
             ai: 'berserker',
             weapon: 'fusion',
             name: 'Supernova Incarnate',
+            phase: [
+                { op: 'statBuff', speedMult: 2, fireRateMult: 2, duration: 10 },
+                { op: 'effect', kind: 'explosion', color: 'boss', count: 30, speed: 400 },
+            ],
         },
         reward: null,
     },
@@ -459,6 +509,135 @@ const PICKUP_CONFIG = {
     bossHeal: 50,
     baseHeal: 15,
     maxHeal: 40,
+};
+
+// Boss "phase 2" abilities, expressed as data. Each level.boss.phase is a list of
+// ops run in order by triggerBossPhase. Handlers are invoked with `this` bound to
+// the AdventureMode instance (see runPhaseOp), so they read this.bossEntity,
+// this.entities, this.game.effects, this.level, etc.
+const PHASE_OPS = {
+    // Spawn count enemy minions of an element near the boss. `count` is a number
+    // or [min,max]; health is scaled (healthMult) or set absolutely (healthSet).
+    spawnMinions(op) {
+        const count = Array.isArray(op.count) ? randInt(op.count[0], op.count[1]) : op.count;
+        const bossPos = this.bossEntity.body.position;
+        for (let i = 0; i < count; i++) {
+            if (this.getEntityCount() >= MAX_ADVENTURE_ENTITIES) break;
+            const x = bossPos.x + randRange(-op.spread.x, op.spread.x);
+            const y = bossPos.y + randRange(-op.spread.y, op.spread.y);
+            const ent = new ElementEntity(this.game.engine, x, y, op.el, 'b');
+            if (typeof op.healthSet === 'number') {
+                ent.maxHealth = op.healthSet;
+            } else if (typeof op.healthMult === 'number') {
+                ent.maxHealth = Math.round(ent.maxHealth * op.healthMult);
+            }
+            ent.health = ent.maxHealth;
+            ent.weapon = randChoice(STARTER_WEAPONS);
+            ent.ai = new AIController(ent, op.ai || 'aggressive');
+            this.entities.push(ent);
+        }
+    },
+
+    // Pull all live entities of op.team toward the boss within op.radius.
+    magneticPull(op) {
+        const bossPos = this.bossEntity.body.position;
+        const r2 = op.radius * op.radius;
+        for (const ent of this.entities) {
+            if (!ent.alive || ent.team !== op.team) continue;
+            const d2 = dist2(bossPos.x, bossPos.y, ent.body.position.x, ent.body.position.y);
+            if (d2 < r2 && d2 > 100) {
+                const d = Math.sqrt(d2);
+                const ang = angle(ent.body.position.x, ent.body.position.y, bossPos.x, bossPos.y);
+                const force = op.force * ent.body.mass * (1 - d / op.radius);
+                Matter.Body.applyForce(ent.body, ent.body.position, {
+                    x: Math.cos(ang) * force,
+                    y: Math.sin(ang) * force,
+                });
+            }
+        }
+    },
+
+    // Radial damage around the boss to live entities, excluding the boss + a team.
+    aoeDamage(op) {
+        const bossPos = this.bossEntity.body.position;
+        const r2 = op.radius * op.radius;
+        for (const ent of this.entities) {
+            if (!ent.alive || ent === this.bossEntity || ent.team === op.excludeTeam) continue;
+            const d2 = dist2(bossPos.x, bossPos.y, ent.body.position.x, ent.body.position.y);
+            if (d2 < r2) {
+                const falloff = 1 - Math.sqrt(d2) / op.radius;
+                resolveElementDamage(
+                    ent,
+                    op.damage * falloff,
+                    this.game.effects,
+                    this.bossEntity,
+                    this.entities,
+                );
+            }
+        }
+    },
+
+    // Create count radioactive floor zones at random x across the level.
+    dangerZones(op) {
+        for (let i = 0; i < op.count; i++) {
+            const x = randRange(300, this.level.width - 300);
+            this.dangerZones.push({
+                x,
+                y: op.y,
+                radius: op.radius,
+                damage: op.damage,
+                duration: op.duration,
+                age: 0,
+                color: op.color,
+            });
+            this.game.effects.toxicCloud(x, op.y, op.color);
+        }
+    },
+
+    // Apply a timed status effect to the boss.
+    statusBuff(op) {
+        this.bossEntity.addStatus(op.status, op.duration);
+    },
+
+    // Temporarily multiply boss speed + fire rate, restoring after op.duration.
+    statBuff(op) {
+        const boss = this.bossEntity;
+        const origSpeed = boss.data.speed;
+        const origFireRate = boss.fireRateMultiplier || 1;
+        boss.data = { ...boss.data, speed: boss.data.speed * op.speedMult };
+        boss.fireRateMultiplier = origFireRate * op.fireRateMult;
+        const timer = this.setManagedTimeout(() => {
+            if (boss.alive && boss.data) {
+                boss.data = { ...boss.data, speed: origSpeed };
+                boss.fireRateMultiplier = origFireRate;
+            }
+        }, op.duration * 1000);
+        this.phaseTimers.push(timer);
+    },
+
+    // Visual/audio flourish at the boss position. color: 'boss' = boss's own color.
+    effect(op) {
+        const fx = this.game.effects;
+        const pos = this.bossEntity.body.position;
+        const color = op.color === 'boss' ? this.bossEntity.data.color : op.color;
+        switch (op.kind) {
+            case 'explosion':
+                fx.explosion(pos.x, pos.y, color, op.count, op.speed);
+                break;
+            case 'sparks':
+                fx.sparks(pos.x, pos.y, color, op.count);
+                break;
+            case 'glowPulse':
+                fx.glowPulse(pos.x, pos.y, color, op.radius);
+                break;
+            case 'nuclear':
+                fx.nuclearExplosion(pos.x, pos.y);
+                break;
+            case 'toxicCloud':
+                fx.toxicCloud(pos.x, pos.y, color);
+                break;
+        }
+    },
 };
 
 class AdventureMode {
@@ -865,7 +1044,7 @@ class AdventureMode {
         const pool = [...UPGRADE_POOL];
         const chosen = [];
         for (let i = 0; i < count && pool.length > 0; i++) {
-            const idx = Math.floor(Math.random() * pool.length);
+            const idx = randInt(0, pool.length - 1);
             chosen.push(pool[idx]);
             pool.splice(idx, 1);
         }
@@ -1000,19 +1179,9 @@ class AdventureMode {
     }
 
     triggerBossPhase() {
-        const levelIndex = this.currentLevel;
-        const phaseHandlers = [
-            () => this.phaseCarbonColossus(),
-            () => this.phaseIronTitan(),
-            () => this.phaseNeonWraith(),
-            () => this.phaseUraniumEmperor(),
-            () => this.phasePlutoniumOverlord(),
-            () => this.phaseGoldDynamo(),
-            () => this.phaseSupernovaIncarnate(),
-        ];
-
-        if (levelIndex < phaseHandlers.length) {
-            phaseHandlers[levelIndex]();
+        const phase = this.level?.boss?.phase || [];
+        for (const op of phase) {
+            this.runPhaseOp(op);
         }
 
         // Universal phase effects: announcement + screen shake
@@ -1021,160 +1190,13 @@ class AdventureMode {
         playSound('cannon');
     }
 
+    runPhaseOp(op) {
+        const handler = PHASE_OPS[op.op];
+        if (handler) handler.call(this, op);
+    }
+
     getEntityCount() {
         return this.entities.filter((e) => e.alive).length;
-    }
-
-    // Level 0: Carbon Colossus — Spawn 2-3 small C minions
-    phaseCarbonColossus() {
-        const count = randInt(2, 3);
-        const bossPos = this.bossEntity.body.position;
-        for (let i = 0; i < count; i++) {
-            if (this.getEntityCount() >= 50) break;
-            const x = bossPos.x + randRange(-80, 80);
-            const y = bossPos.y + randRange(-40, 40);
-            const ent = new ElementEntity(this.game.engine, x, y, 'C', 'b');
-            ent.maxHealth = Math.round(ent.maxHealth * 0.5);
-            ent.health = ent.maxHealth;
-            ent.weapon = randChoice(STARTER_WEAPONS);
-            ent.ai = new AIController(ent, 'aggressive');
-            ent.isPhaseSpawn = true;
-            this.entities.push(ent);
-        }
-        this.game.effects.explosion(bossPos.x, bossPos.y, '#444444', 15, 200);
-    }
-
-    // Level 1: Iron Titan — Magnetic pull burst toward boss
-    phaseIronTitan() {
-        const bossPos = this.bossEntity.body.position;
-        const pullRadius = 350;
-        for (const ent of this.entities) {
-            if (!ent.alive || ent.team !== 'a') continue;
-            const d = dist(bossPos.x, bossPos.y, ent.body.position.x, ent.body.position.y);
-            if (d < pullRadius && d > 10) {
-                const ang = angle(ent.body.position.x, ent.body.position.y, bossPos.x, bossPos.y);
-                const force = 0.004 * ent.body.mass * (1 - d / pullRadius);
-                Matter.Body.applyForce(ent.body, ent.body.position, {
-                    x: Math.cos(ang) * force,
-                    y: Math.sin(ang) * force,
-                });
-            }
-        }
-        this.game.effects.explosion(bossPos.x, bossPos.y, '#8888ff', 25, 300);
-        this.game.effects.sparks(bossPos.x, bossPos.y, '#8888ff', 20);
-    }
-
-    // Level 2: Neon Wraith — Create 3 glowing clone entities
-    phaseNeonWraith() {
-        const bossPos = this.bossEntity.body.position;
-        for (let i = 0; i < 3; i++) {
-            if (this.getEntityCount() >= 50) break;
-            const x = bossPos.x + randRange(-120, 120);
-            const y = bossPos.y + randRange(-60, 60);
-            const ent = new ElementEntity(this.game.engine, x, y, 'Ne', 'b');
-            ent.maxHealth = 10;
-            ent.health = 10;
-            ent.weapon = randChoice(STARTER_WEAPONS);
-            ent.ai = new AIController(ent, 'aggressive');
-            ent.isPhaseSpawn = true;
-            ent.isPhaseClone = true;
-            this.entities.push(ent);
-        }
-        this.game.effects.glowPulse(bossPos.x, bossPos.y, this.bossEntity.data.color, 80);
-        this.game.effects.explosion(bossPos.x, bossPos.y, '#ff88ff', 20, 250);
-    }
-
-    // Level 3: Uranium Emperor — Create 3 radioactive floor zones (8s)
-    phaseUraniumEmperor() {
-        this.game.effects.nuclearExplosion(
-            this.bossEntity.body.position.x,
-            this.bossEntity.body.position.y,
-        );
-        for (let i = 0; i < 3; i++) {
-            const x = randRange(300, this.level.width - 300);
-            this.dangerZones.push({
-                x,
-                y: 720,
-                radius: 80,
-                damage: 5,
-                duration: 8,
-                age: 0,
-                color: '#44ff88',
-            });
-            this.game.effects.toxicCloud(x, 720, '#44ff88');
-        }
-    }
-
-    // Level 4: Plutonium Overlord — Nuclear burst + 2 Pu helpers
-    phasePlutoniumOverlord() {
-        const bossPos = this.bossEntity.body.position;
-        this.game.effects.nuclearExplosion(bossPos.x, bossPos.y);
-
-        // AOE damage to nearby non-boss entities
-        for (const ent of this.entities) {
-            if (!ent.alive || ent === this.bossEntity || ent.team === 'b') continue;
-            const d = dist(bossPos.x, bossPos.y, ent.body.position.x, ent.body.position.y);
-            if (d < 200) {
-                const falloff = 1 - d / 200;
-                resolveElementDamage(
-                    ent,
-                    20 * falloff,
-                    this.game.effects,
-                    this.bossEntity,
-                    this.entities,
-                );
-            }
-        }
-
-        // Spawn 2 Pu helpers
-        for (let i = 0; i < 2; i++) {
-            if (this.getEntityCount() >= 50) break;
-            const x = bossPos.x + randRange(-100, 100);
-            const y = bossPos.y + randRange(-50, 50);
-            const ent = new ElementEntity(this.game.engine, x, y, 'Pu', 'b');
-            ent.maxHealth = Math.round(ent.maxHealth * 0.5);
-            ent.health = ent.maxHealth;
-            ent.weapon = randChoice(STARTER_WEAPONS);
-            ent.ai = new AIController(ent, 'aggressive');
-            ent.isPhaseSpawn = true;
-            this.entities.push(ent);
-        }
-    }
-
-    // Level 5: Gold Dynamo — Shield itself for 10s (damage reduction)
-    phaseGoldDynamo() {
-        const boss = this.bossEntity;
-        boss.addStatus('phase_shielded', 10);
-        this.game.effects.glowPulse(boss.body.position.x, boss.body.position.y, '#ffdd44', 80);
-        this.game.effects.explosion(boss.body.position.x, boss.body.position.y, '#ffdd44', 20, 250);
-    }
-
-    // Level 6: Supernova Incarnate — Speed + fire rate burst for 10s
-    phaseSupernovaIncarnate() {
-        const boss = this.bossEntity;
-        const origSpeed = boss.data.speed;
-        const origFireRate = boss.fireRateMultiplier || 1;
-
-        // Double speed and fire rate
-        boss.data = { ...boss.data, speed: boss.data.speed * 2 };
-        boss.fireRateMultiplier = (boss.fireRateMultiplier || 1) * 2;
-
-        this.game.effects.explosion(
-            boss.body.position.x,
-            boss.body.position.y,
-            boss.data.color,
-            30,
-            400,
-        );
-
-        // Restore after 10s
-        const timer = this.setManagedTimeout(() => {
-            if (boss.alive && boss.data) {
-                boss.data = { ...boss.data, speed: origSpeed };
-                boss.fireRateMultiplier = origFireRate;
-            }
-        }, 10000);
-        this.phaseTimers.push(timer);
     }
 
     update(dt) {
@@ -1269,10 +1291,11 @@ class AdventureMode {
                 continue;
             }
             // Apply DOT to non-boss entities in zone
+            const zoneR2 = zone.radius * zone.radius;
             for (const ent of this.entities) {
                 if (!ent.alive || ent.team === 'b') continue;
-                const d = dist(zone.x, zone.y, ent.body.position.x, ent.body.position.y);
-                if (d < zone.radius) {
+                const d2 = dist2(zone.x, zone.y, ent.body.position.x, ent.body.position.y);
+                if (d2 < zoneR2) {
                     ent.health -= zone.damage * dt;
                     if (Math.random() < dt * 3) {
                         this.game.effects.damageNumber(
@@ -1328,7 +1351,7 @@ class AdventureMode {
                 }
 
                 player.addScore(ent.data.atomicNum * 10);
-                const scoreBonus = getSpecialConfig(ent.data.special).scoreBonus || 0;
+                const scoreBonus = ent.special.scoreBonus || 0;
                 if (scoreBonus) {
                     player.addScore(scoreBonus);
                     this.game.effects.scorePopup(

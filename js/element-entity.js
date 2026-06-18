@@ -20,13 +20,17 @@ class ElementEntity {
 
         // AI
         this.ai = null;
-        this.aiState = {};
         this.entitiesContext = null;
 
         // Special ability cooldown
         this.specialTimer = 0;
-        this.specialCooldown = 3;
         this.statuses = new Map();
+
+        // Special config and render colors are constant per element — cache them
+        // so the per-frame update/render paths don't recompute them.
+        this.special = getSpecialConfig(data.special);
+        this.rimColor = colorWithAlpha(data.color, 0.5);
+        this.symbolColor = this.isLightColor() ? '#000' : '#fff';
 
         // Visual
         this.flashTimer = 0;
@@ -58,9 +62,8 @@ class ElementEntity {
         Matter.Composite.add(engine.world, this.body);
         this.engine = engine;
 
-        const special = getSpecialConfig(data.special);
-        if (typeof special.frictionAir === 'number') {
-            this.body.frictionAir = special.frictionAir;
+        if (typeof this.special.frictionAir === 'number') {
+            this.body.frictionAir = this.special.frictionAir;
         }
     }
 
@@ -78,7 +81,7 @@ class ElementEntity {
         this.updateStatuses(dt);
         this.applyStatusEffects(dt, effects);
 
-        const special = getSpecialConfig(this.data.special);
+        const special = this.special;
 
         if (special.passiveForce) {
             const isFloat = this.data.special === 'float';
@@ -131,7 +134,7 @@ class ElementEntity {
         if (effects) {
             effects.deathExplosion(this.body.position.x, this.body.position.y, this.data.color);
 
-            const death = getSpecialConfig(this.data.special).death;
+            const death = this.special.death;
             if (death?.nuclear) {
                 effects.nuclearExplosion(this.body.position.x, this.body.position.y);
             }
@@ -154,11 +157,12 @@ class ElementEntity {
         playSound('explode');
         triggerScreenShake(SCREEN_SHAKE_CONFIG.explosion + 2);
 
+        const r2 = radius * radius;
         for (const ent of entities) {
             if (ent === this || !ent.alive) continue;
-            const d = dist(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
-            if (d < radius) {
-                const falloff = 1 - d / radius;
+            const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
+            if (d2 < r2) {
+                const falloff = 1 - Math.sqrt(d2) / radius;
                 resolveElementDamage(ent, damage * falloff, effects, this, entities, {
                     attackerSpecial: this.data.special,
                 });
@@ -175,10 +179,11 @@ class ElementEntity {
 
     applyAuraDamage(entities, effects, aura) {
         const pos = this.body.position;
+        const r2 = aura.radius * aura.radius;
         for (const ent of entities) {
             if (ent === this || !ent.alive || ent.team === this.team) continue;
-            const d = dist(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
-            if (d < aura.radius) {
+            const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
+            if (d2 < r2) {
                 resolveElementDamage(ent, aura.damage, effects, this, entities, {
                     attackerSpecial: this.data.special,
                     status: aura.status,
@@ -265,13 +270,14 @@ class ElementEntity {
 
     // Magnetic pull (Fe special)
     applyMagnetic(entities) {
-        const magnetic = getSpecialConfig(this.data.special).magnetic;
+        const magnetic = this.special.magnetic;
         if (!magnetic) return;
         const pos = this.body.position;
+        const r2 = magnetic.radius * magnetic.radius;
         for (const ent of entities) {
             if (ent === this || !ent.alive || ent.team === this.team) continue;
-            const d = dist(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
-            if (d < magnetic.radius && d > 10) {
+            const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
+            if (d2 < r2 && d2 > 100) {
                 const ang = angle(ent.body.position.x, ent.body.position.y, pos.x, pos.y);
                 const force = magnetic.force * ent.body.mass;
                 Matter.Body.applyForce(ent.body, ent.body.position, {
@@ -310,7 +316,7 @@ class ElementEntity {
         ctx.fill();
 
         // Darker rim
-        ctx.strokeStyle = colorWithAlpha(this.data.color, 0.5);
+        ctx.strokeStyle = this.rimColor;
         ctx.lineWidth = 2;
         ctx.stroke();
 
@@ -326,7 +332,7 @@ class ElementEntity {
         }
 
         // Symbol text
-        ctx.fillStyle = this.isLightColor() ? '#000' : '#fff';
+        ctx.fillStyle = this.symbolColor;
         ctx.font = `bold ${Math.round(r * 0.9)}px monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -376,23 +382,7 @@ class ElementEntity {
     // Returns true if there is a solid body (ground/platform/wall) directly beneath this element.
     // Used by the 'float' special so helium only rises when airborne (prevents immediate levitation on spawn).
     isGrounded() {
-        if (!this.engine || !this.body) return false;
-        const bodies = Matter.Composite.allBodies(this.engine.world);
-        const r = this.data.radius;
-        const pos = this.body.position;
-        for (const b of bodies) {
-            if (b === this.body || b.isSensor) continue;
-            if (b.collisionFilter.category === CAT.PROJECTILE) continue;
-            if (
-                Matter.Bounds.contains(b.bounds, {
-                    x: pos.x,
-                    y: pos.y + r + 3,
-                })
-            ) {
-                return true;
-            }
-        }
-        return false;
+        return isBodyGrounded(this.engine, this.body, this.data.radius);
     }
 
     destroy() {

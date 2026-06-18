@@ -140,6 +140,15 @@ class Game {
         return [];
     }
 
+    // The active mode's static geometry (ground/walls/platforms) — the only
+    // bodies that can ground an entity. Used by isBodyGrounded to avoid walking
+    // every dynamic body each frame.
+    getStaticBodies() {
+        if (this.mode === 'sandbox') return this.sandbox.staticBodies || [];
+        if (this.mode === 'adventure') return this.adventure.staticBodies || [];
+        return [];
+    }
+
     startSandbox() {
         this.stopMode();
         this.mode = 'sandbox';

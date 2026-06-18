@@ -118,13 +118,7 @@ class Player {
         }
 
         // Speed cap
-        const maxVel = data.speed * 0.8 * speedMul;
-        if (Math.abs(body.velocity.x) > maxVel) {
-            Matter.Body.setVelocity(body, {
-                x: Math.sign(body.velocity.x) * maxVel,
-                y: body.velocity.y,
-            });
-        }
+        capHorizontalSpeed(body, data.speed * 0.8 * speedMul);
 
         // Shooting
         if (this.mouseDown && ent.weapon) {
@@ -135,7 +129,7 @@ class Player {
         ent.applyMagnetic(entities);
 
         // Electric chain special
-        const chain = getSpecialConfig(ent.data.special).chain;
+        const chain = ent.special.chain;
         if (chain && ent.specialTimer <= 0 && this.mouseDown) {
             ent.specialTimer = chain.cooldown;
             this.chainLightning(ent, entities, effects);
@@ -144,26 +138,12 @@ class Player {
 
     isGrounded(engine) {
         if (!this.entity) return false;
-        const body = this.entity.body;
-        const pos = body.position;
-        const r = this.entity.data.radius;
-
-        // Ray cast downward
-        const bodies = Matter.Composite.allBodies(engine.world);
-        for (const b of bodies) {
-            if (b === body || b.isSensor) continue;
-            if (b.collisionFilter.category === CAT.PROJECTILE) continue;
-            // Check if any body is directly below within a small margin
-            if (Matter.Bounds.contains(b.bounds, { x: pos.x, y: pos.y + r + 3 })) {
-                return true;
-            }
-        }
-        return false;
+        return isBodyGrounded(engine, this.entity.body, this.entity.data.radius);
     }
 
     chainLightning(entity, entities, effects) {
         const pos = entity.body.position;
-        const chain = getSpecialConfig(entity.data.special).chain;
+        const chain = entity.special.chain;
         const range = chain.range;
         let targets = entities
             .filter(

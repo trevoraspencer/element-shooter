@@ -713,11 +713,11 @@ function getSpecialConfig(specialKey) {
     return SPECIALS[specialKey] || SPECIALS.none;
 }
 
+// Accepts an entity ({ data: { special } }), a normalized { special }, or a raw
+// special-key string for either side, resolving each to its special key.
 function getEffectivenessMultiplier(attacker, defender) {
-    const attackerKey =
-        attacker?.data?.special || attacker?.special || attacker?.elementKey || attacker || 'none';
-    const defenderKey =
-        defender?.data?.special || defender?.special || defender?.elementKey || defender || 'none';
+    const attackerKey = attacker?.data?.special || attacker?.special || attacker || 'none';
+    const defenderKey = defender?.data?.special || defender?.special || defender || 'none';
     return ELEMENT_EFFECTIVENESS[attackerKey]?.[defenderKey] || 1;
 }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { loadSource } from './helpers/load-source.js';
 
 let utils;
@@ -98,6 +98,31 @@ describe('dist', () => {
 
     it('handles negative coordinates', () => {
         expect(utils.dist(-3, -4, 0, 0)).toBe(5);
+    });
+});
+
+describe('dist2', () => {
+    it('returns 0 for the same point', () => {
+        expect(utils.dist2(3, 4, 3, 4)).toBe(0);
+    });
+
+    it('equals dist squared for a 3-4-5 triangle', () => {
+        expect(utils.dist2(0, 0, 3, 4)).toBe(25);
+    });
+
+    it('equals dist squared for the unit diagonal', () => {
+        expect(utils.dist2(0, 0, 1, 1)).toBeCloseTo(utils.dist(0, 0, 1, 1) ** 2);
+    });
+
+    it('matches dist**2 across assorted points (incl. negatives)', () => {
+        for (const [x1, y1, x2, y2] of [
+            [0, 0, 5, 0],
+            [0, 0, 0, 7],
+            [-3, -4, 0, 0],
+            [2, 9, -6, 1],
+        ]) {
+            expect(utils.dist2(x1, y1, x2, y2)).toBeCloseTo(utils.dist(x1, y1, x2, y2) ** 2);
+        }
     });
 });
 

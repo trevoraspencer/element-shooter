@@ -189,7 +189,7 @@ class Projectile {
             });
 
             // Knockback
-            const ang = Math.atan2(this.body.velocity.y, this.body.velocity.x);
+            const ang = angle(0, 0, this.body.velocity.x, this.body.velocity.y);
             const force = this.wpn.knockback * 0.005 * entity.body.mass;
             Matter.Body.applyForce(entity.body, entity.body.position, {
                 x: Math.cos(ang) * force,
@@ -197,7 +197,7 @@ class Projectile {
             });
 
             // Reflect special
-            const reflectChance = getSpecialConfig(entity.data.special).reflectChance || 0;
+            const reflectChance = entity.special.reflectChance || 0;
             if (reflectChance && Math.random() < reflectChance) {
                 // Reflect projectile back
                 Matter.Body.setVelocity(this.body, {
@@ -224,12 +224,13 @@ class Projectile {
 
             // AoE damage
             if (entities) {
+                const r2 = this.wpn.explosionRadius * this.wpn.explosionRadius;
                 for (const ent of entities) {
                     if (!ent.alive || ent === this.shooter) continue;
                     if (ent.team === this.team && this.team !== 'neutral') continue;
-                    const d = dist(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
-                    if (d < this.wpn.explosionRadius) {
-                        const falloff = 1 - d / this.wpn.explosionRadius;
+                    const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
+                    if (d2 < r2) {
+                        const falloff = 1 - Math.sqrt(d2) / this.wpn.explosionRadius;
                         resolveElementDamage(
                             ent,
                             this.wpn.damage * falloff * 0.6,
