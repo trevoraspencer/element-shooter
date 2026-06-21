@@ -250,6 +250,17 @@ class Projectile {
                     }
                 }
             }
+
+            // Structures take splash damage too (sandbox creator mode).
+            damageStructuresInRadius(
+                activeSandboxStructures(),
+                pos.x,
+                pos.y,
+                this.wpn.explosionRadius,
+                this.wpn.damage * 0.6,
+                effects,
+                this.engine.world,
+            );
         } else if (effects) {
             effects.sparks(this.body.position.x, this.body.position.y, this.wpn.projectileColor);
         }

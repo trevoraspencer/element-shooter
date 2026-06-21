@@ -175,6 +175,17 @@ class ElementEntity {
                 });
             }
         }
+
+        // Explosive/nuclear element deaths also breach nearby structures.
+        damageStructuresInRadius(
+            activeSandboxStructures(),
+            pos.x,
+            pos.y,
+            radius,
+            damage,
+            effects,
+            this.engine.world,
+        );
     }
 
     applyAuraDamage(entities, effects, aura) {

@@ -87,6 +87,14 @@ class Game {
                     if (b.projectile) b.projectile.onHit(null, this.getAllEntities(), this.effects);
                 }
 
+                // Projectile hit a structure part — damage it, then resolve the
+                // projectile against it as it would any wall.
+                if (a.label === 'projectile' && b.label === 'structure') {
+                    this.handleStructureHit(a.projectile, b);
+                } else if (b.label === 'projectile' && a.label === 'structure') {
+                    this.handleStructureHit(b.projectile, a);
+                }
+
                 // Body slam (element vs element)
                 if (a.label === 'element' && b.label === 'element') {
                     this.handleBodySlam(a.entity, b.entity, pair);
@@ -98,6 +106,17 @@ class Game {
     handleProjectileHit(projectile, entity) {
         if (!projectile || !entity) return;
         projectile.onHit(entity, this.getAllEntities(), this.effects);
+    }
+
+    handleStructureHit(projectile, body) {
+        if (!projectile || !body || !body.structure) return;
+        body.structure.damagePart(
+            body.structurePart,
+            projectile.wpn.damage,
+            this.engine.world,
+            this.effects,
+        );
+        projectile.onHit(null, this.getAllEntities(), this.effects);
     }
 
     handleBodySlam(entA, entB, pair) {

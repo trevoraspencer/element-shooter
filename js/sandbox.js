@@ -68,6 +68,14 @@ class SandboxMode {
         this.projectiles = [];
         this.maxEntities = 50;
 
+        // Structures (creator mode)
+        this.structures = [];
+        this.selectedStructure = 'house';
+        this.placeGhost = null;
+        // Tracks live structure part bodies so update() can detect when combat
+        // destroys one and refresh the grounding cache / drop empty structures.
+        this._lastStructureBodyCount = 0;
+
         // Drag state
         this.dragBody = null;
         this.dragConstraint = null;
@@ -165,8 +173,44 @@ class SandboxMode {
             }),
         );
 
-        this.staticBodies = [this.ground, this.ceiling, this.wallL, this.wallR, ...platforms];
-        Composite.add(this.game.engine.world, this.staticBodies);
+        this.arenaBodies = [this.ground, this.ceiling, this.wallL, this.wallR, ...platforms];
+        this.staticBodies = [...this.arenaBodies];
+        Composite.add(this.game.engine.world, this.arenaBodies);
+    }
+
+    // The grounding cache (this.staticBodies) = arena geometry + every live
+    // structure part body. Rebuilt whenever structures are placed/removed so
+    // isBodyGrounded (which reads this.staticBodies) sees roofs/ramparts.
+    rebuildStaticBodies() {
+        const structureBodies = [];
+        for (const s of this.structures) {
+            structureBodies.push(...s.partBodies());
+        }
+        this.staticBodies = [...(this.arenaBodies || []), ...structureBodies];
+        this._lastStructureBodyCount = structureBodies.length;
+    }
+
+    // Drops fully-destroyed structures and refreshes the grounding cache when
+    // combat has broken off any part (its body was removed by onPartDestroyed,
+    // so the cached body list and live body count drift). Cheap: a handful of
+    // structures, only rebuilds when the live body count actually changed.
+    pruneStructures() {
+        if (!this.structures.length) return;
+
+        let changed = false;
+        for (let i = this.structures.length - 1; i >= 0; i--) {
+            if (this.structures[i].isEmpty()) {
+                this.structures.splice(i, 1);
+                changed = true;
+            }
+        }
+
+        let liveBodies = 0;
+        for (const s of this.structures) liveBodies += s.partBodies().length;
+
+        if (changed || liveBodies !== this._lastStructureBodyCount) {
+            this.rebuildStaticBodies();
+        }
     }
 
     setupMouseHandlers() {
@@ -191,6 +235,9 @@ class SandboxMode {
                 case 'freeze':
                     this.freezeAt(world.x, world.y);
                     break;
+                case 'place':
+                    this.placeStructure(world.x);
+                    break;
             }
         };
 
@@ -213,6 +260,17 @@ class SandboxMode {
                     y: world.y,
                 };
             }
+
+            if (this.currentTool === 'place') {
+                // Only preview over the play area — hovering the toolbar/menu
+                // clears the ghost so it never looks "stuck" to the UI.
+                if (e.target === canvas) {
+                    const world = this.game.camera.screenToWorld(e.clientX, e.clientY);
+                    this.placeGhost = { x: world.x, groundY: SANDBOX_FLOOR_TOP };
+                } else {
+                    this.placeGhost = null;
+                }
+            }
         };
 
         this.mouseUpHandler = (e) => {
@@ -220,10 +278,41 @@ class SandboxMode {
             this.endDrag();
         };
 
+        // Leaving the canvas hides the placement ghost.
+        this.mouseLeaveHandler = () => {
+            this.placeGhost = null;
+        };
+
+        // Right-click cancels placement (revert to the spawn tool).
+        this.contextMenuHandler = (e) => {
+            if (!this.active || this.currentTool !== 'place') return;
+            e.preventDefault();
+            this.cancelPlacement();
+        };
+
+        // Escape also cancels placement.
+        this.keyDownHandler = (e) => {
+            if (!this.active || this.currentTool !== 'place') return;
+            if (e.key === 'Escape') this.cancelPlacement();
+        };
+
         canvas.addEventListener('click', this.mouseHandler);
         canvas.addEventListener('mousedown', this.mouseDownHandler);
+        canvas.addEventListener('mouseleave', this.mouseLeaveHandler);
+        canvas.addEventListener('contextmenu', this.contextMenuHandler);
         window.addEventListener('mousemove', this.mouseMoveHandler);
         window.addEventListener('mouseup', this.mouseUpHandler);
+        window.addEventListener('keydown', this.keyDownHandler);
+    }
+
+    // Exit the place tool: clear the ghost and switch back to the spawn tool
+    // (clicking the button reuses the toolbar's selection logic so the UI stays
+    // in sync). Falls back to setting the tool directly if the button is absent.
+    cancelPlacement() {
+        this.placeGhost = null;
+        const spawnBtn = document.querySelector('[data-tool="spawn"]');
+        if (spawnBtn) spawnBtn.click();
+        else this.currentTool = 'spawn';
     }
 
     spawnElement(x, y) {
@@ -315,7 +404,16 @@ class SandboxMode {
         return 'wanderer';
     }
 
+    placeStructure(x) {
+        const structure = new Structure(this.selectedStructure, x, SANDBOX_FLOOR_TOP);
+        structure.addToWorld(this.game.engine.world);
+        this.structures.push(structure);
+        this.rebuildStaticBodies();
+        playSound('pickup');
+    }
+
     deleteAt(x, y) {
+        // Elements first, so clicking an element inside a structure removes it.
         for (let i = this.entities.length - 1; i >= 0; i--) {
             const ent = this.entities[i];
             if (!ent.alive) continue;
@@ -324,6 +422,17 @@ class SandboxMode {
                 ent.destroy();
                 this.entities.splice(i, 1);
                 this.updateEntityCount();
+                return;
+            }
+        }
+
+        // Then structures — remove the whole structure under the cursor.
+        for (let i = this.structures.length - 1; i >= 0; i--) {
+            const s = this.structures[i];
+            if (s.containsPoint(x, y)) {
+                s.removeFromWorld(this.game.engine.world);
+                this.structures.splice(i, 1);
+                this.rebuildStaticBodies();
                 return;
             }
         }
@@ -348,6 +457,17 @@ class SandboxMode {
                 });
             }
         }
+
+        // Structures take splash damage from the explode tool too.
+        damageStructuresInRadius(
+            this.structures,
+            x,
+            y,
+            150,
+            40,
+            this.game.effects,
+            this.game.engine.world,
+        );
     }
 
     freezeAt(x, y) {
@@ -411,6 +531,12 @@ class SandboxMode {
             proj.destroy();
         }
         this.projectiles = [];
+
+        for (const s of this.structures) {
+            s.removeFromWorld(this.game.engine.world);
+        }
+        this.structures = [];
+        this.rebuildStaticBodies();
 
         this.updateEntityCount();
     }
@@ -476,6 +602,9 @@ class SandboxMode {
 
         this.projectiles = this.projectiles.filter((p) => p.alive);
 
+        // Refresh structure state after any combat damage this frame.
+        this.pruneStructures();
+
         this.updateEntityCount();
     }
 
@@ -484,6 +613,11 @@ class SandboxMode {
 
         // Draw arena
         this.renderArena(ctx, camera);
+
+        // Draw placed structures (behind entities so occupants render on top)
+        for (const s of this.structures) {
+            s.render(ctx, camera);
+        }
 
         // Draw entities
         for (const ent of this.entities) {
@@ -515,6 +649,17 @@ class SandboxMode {
             ctx.setLineDash([5, 5]);
             ctx.stroke();
             ctx.restore();
+        }
+
+        // Draw placement ghost for the place tool
+        if (this.currentTool === 'place' && this.placeGhost) {
+            renderStructureGhost(
+                ctx,
+                camera,
+                this.selectedStructure,
+                this.placeGhost.x,
+                this.placeGhost.groundY,
+            );
         }
     }
 
@@ -587,20 +732,25 @@ class SandboxMode {
         this.active = false;
         this.clearAll();
 
-        // Remove static bodies
-        if (this.staticBodies) {
-            for (const b of this.staticBodies) {
+        // Remove arena geometry (clearAll already dropped any structures)
+        if (this.arenaBodies) {
+            for (const b of this.arenaBodies) {
                 Matter.Composite.remove(this.game.engine.world, b);
             }
-            this.staticBodies = [];
+            this.arenaBodies = [];
         }
+        this.staticBodies = [];
+        this.placeGhost = null;
 
         // Remove event listeners
         if (this.mouseHandler) {
             this.game.canvas.removeEventListener('click', this.mouseHandler);
             this.game.canvas.removeEventListener('mousedown', this.mouseDownHandler);
+            this.game.canvas.removeEventListener('mouseleave', this.mouseLeaveHandler);
+            this.game.canvas.removeEventListener('contextmenu', this.contextMenuHandler);
             window.removeEventListener('mousemove', this.mouseMoveHandler);
             window.removeEventListener('mouseup', this.mouseUpHandler);
+            window.removeEventListener('keydown', this.keyDownHandler);
         }
 
         this.endDrag();

@@ -93,7 +93,20 @@
                 <span class="toolbar-label">Spawn</span>
                 <button class="tool-btn active" data-tool="spawn" title="Click to spawn">+</button>
                 <button class="tool-btn" data-tool="drag" title="Drag elements">&#9995;</button>
-                <button class="tool-btn" data-tool="delete" title="Delete elements">&times;</button>
+                <button class="tool-btn" data-tool="delete" title="Delete elements/structures">
+                    &times;
+                </button>
+            </div>
+            <div class="toolbar-section">
+                <span class="toolbar-label">Build</span>
+                <button
+                    class="tool-btn"
+                    data-tool="place"
+                    title="Place structure (right-click or Esc to cancel)"
+                >
+                    &#127962;
+                </button>
+                <select id="sandbox-structure-select"></select>
             </div>
             <div class="toolbar-section">
                 <span class="toolbar-label">FX</span>
@@ -189,6 +202,7 @@
         <script src="js/effects.js"></script>
         <script src="js/element-entity.js"></script>
         <script src="js/weapons.js"></script>
+        <script src="js/structures.js"></script>
         <script src="js/player.js"></script>
         <script src="js/ai.js"></script>
         <script src="js/camera.js"></script>
