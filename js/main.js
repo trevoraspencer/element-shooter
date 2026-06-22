@@ -59,6 +59,10 @@ class Game {
         if (this.camera) {
             this.camera.resize(width, height);
         }
+        // Sandbox pins its boundary walls to the window edges — re-pin on resize.
+        if (this.mode === 'sandbox' && this.sandbox && this.sandbox.active) {
+            this.sandbox.onResize();
+        }
     }
 
     setupCollisions() {

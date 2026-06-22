@@ -43,8 +43,29 @@ const SANDBOX_FLOOR_RIGHT = 4000;
 const SANDBOX_FLOOR_WIDTH = SANDBOX_FLOOR_RIGHT - SANDBOX_FLOOR_LEFT;
 const SANDBOX_FLOOR_CENTER_X = (SANDBOX_FLOOR_LEFT + SANDBOX_FLOOR_RIGHT) / 2;
 const SANDBOX_FLOOR_TOP = 720;
-const SANDBOX_WALL_INSET = 10;
 const SANDBOX_PLATFORM_HEIGHT = 20;
+// Boundary walls are pinned to the visible browser-window edges (not the arena
+// extents) so elements can't roam off-screen. The camera is static in sandbox,
+// so the view stays centered on this world point.
+const SANDBOX_CAMERA_CENTER_X = 1000;
+const SANDBOX_CAMERA_CENTER_Y = 300;
+const SANDBOX_WALL_THICKNESS = 40;
+const SANDBOX_WALL_CENTER_Y = 350;
+const SANDBOX_WALL_HEIGHT = 920;
+const SANDBOX_WALL_RENDER_WIDTH = 14;
+
+// Pure: given the static camera's world origin (cameraX), viewport width, and
+// zoom, return the center x of each boundary wall body so that the wall's inner
+// face lines up exactly with the corresponding visible window edge. The visible
+// world span is [cameraX, cameraX + width / zoom] (see Camera.screenToWorld).
+function computeBoundaryWallX(cameraX, cameraWidth, cameraZoom, wallThickness) {
+    const leftEdge = cameraX;
+    const rightEdge = cameraX + cameraWidth / cameraZoom;
+    return {
+        left: leftEdge - wallThickness / 2,
+        right: rightEdge + wallThickness / 2,
+    };
+}
 // Platform definitions (center x/y, width) shared by the physics bodies and rendering.
 const SANDBOX_PLATFORMS = [
     { x: 500, y: 550, w: 300 },
@@ -103,7 +124,7 @@ class SandboxMode {
 
         // Set world bounds for sandbox
         this.game.camera.setWorldBounds(SANDBOX_FLOOR_LEFT, -500, SANDBOX_FLOOR_RIGHT, 1200);
-        this.game.camera.setPosition(1000, 300);
+        this.game.camera.setPosition(SANDBOX_CAMERA_CENTER_X, SANDBOX_CAMERA_CENTER_Y);
 
         // Create ground and walls
         this.createArena();
@@ -142,24 +163,38 @@ class SandboxMode {
             label: 'wall',
         });
 
-        // Walls (tall enough to span from ceiling to ground)
-        this.wallL = Bodies.rectangle(SANDBOX_FLOOR_LEFT - SANDBOX_WALL_INSET, 350, 40, 920, {
-            isStatic: true,
-            collisionFilter: {
-                category: CAT.WALL,
-                mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+        // Boundary walls — created here, then pinned to the visible window edges
+        // by updateWalls() so elements can't roam off-screen. Tall enough to span
+        // from ceiling to ground. Initial x is a placeholder.
+        this.wallL = Bodies.rectangle(
+            0,
+            SANDBOX_WALL_CENTER_Y,
+            SANDBOX_WALL_THICKNESS,
+            SANDBOX_WALL_HEIGHT,
+            {
+                isStatic: true,
+                collisionFilter: {
+                    category: CAT.WALL,
+                    mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+                },
+                label: 'wall',
             },
-            label: 'wall',
-        });
+        );
 
-        this.wallR = Bodies.rectangle(SANDBOX_FLOOR_RIGHT + SANDBOX_WALL_INSET, 350, 40, 920, {
-            isStatic: true,
-            collisionFilter: {
-                category: CAT.WALL,
-                mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+        this.wallR = Bodies.rectangle(
+            0,
+            SANDBOX_WALL_CENTER_Y,
+            SANDBOX_WALL_THICKNESS,
+            SANDBOX_WALL_HEIGHT,
+            {
+                isStatic: true,
+                collisionFilter: {
+                    category: CAT.WALL,
+                    mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+                },
+                label: 'wall',
             },
-            label: 'wall',
-        });
+        );
 
         // Platforms — built from the shared SANDBOX_PLATFORMS table
         const platforms = SANDBOX_PLATFORMS.map((p) =>
@@ -176,6 +211,37 @@ class SandboxMode {
         this.arenaBodies = [this.ground, this.ceiling, this.wallL, this.wallR, ...platforms];
         this.staticBodies = [...this.arenaBodies];
         Composite.add(this.game.engine.world, this.arenaBodies);
+
+        // Pin the boundary walls to the current window edges.
+        this.updateWalls();
+    }
+
+    // Pin the boundary walls to the current visible window edges and remember
+    // their inner-face world x for rendering. Called on arena creation and when
+    // the window resizes. The camera is static in sandbox, so the visible world
+    // span is fixed by the camera origin + viewport size.
+    updateWalls() {
+        if (!this.wallL || !this.wallR) return;
+        const cam = this.game.camera;
+        const { left, right } = computeBoundaryWallX(
+            cam.x,
+            cam.width,
+            cam.zoom,
+            SANDBOX_WALL_THICKNESS,
+        );
+        Matter.Body.setPosition(this.wallL, { x: left, y: SANDBOX_WALL_CENTER_Y });
+        Matter.Body.setPosition(this.wallR, { x: right, y: SANDBOX_WALL_CENTER_Y });
+        // Inner faces = the visible window edges (world coords), used by render.
+        this._wallLeftX = left + SANDBOX_WALL_THICKNESS / 2;
+        this._wallRightX = right - SANDBOX_WALL_THICKNESS / 2;
+    }
+
+    // The browser window resized: re-center the static camera on the arena and
+    // re-pin the boundary walls to the new window edges.
+    onResize() {
+        if (!this.active) return;
+        this.game.camera.setPosition(SANDBOX_CAMERA_CENTER_X, SANDBOX_CAMERA_CENTER_Y);
+        this.updateWalls();
     }
 
     // The grounding cache (this.staticBodies) = arena geometry + every live
@@ -696,16 +762,30 @@ class SandboxMode {
             ctx.strokeRect(s.x, s.y, w, h);
         }
 
-        // Walls (full height from ceiling to ground)
+        // Ceiling — spans the visible arena width
         ctx.fillStyle = '#151530';
-        let wall = camera.worldToScreen(SANDBOX_FLOOR_LEFT - 20, -110);
-        ctx.fillRect(wall.x, wall.y, 20 * camera.zoom, 900 * camera.zoom);
-        wall = camera.worldToScreen(SANDBOX_FLOOR_RIGHT, -110);
-        ctx.fillRect(wall.x, wall.y, 20 * camera.zoom, 900 * camera.zoom);
+        const ceil = camera.worldToScreen(SANDBOX_FLOOR_LEFT - 20, -110);
+        ctx.fillRect(ceil.x, ceil.y, (SANDBOX_FLOOR_WIDTH + 40) * camera.zoom, 60 * camera.zoom);
 
-        // Ceiling
-        wall = camera.worldToScreen(SANDBOX_FLOOR_LEFT - 20, -110);
-        ctx.fillRect(wall.x, wall.y, (SANDBOX_FLOOR_WIDTH + 40) * camera.zoom, 60 * camera.zoom);
+        // Boundary walls — bars flush with the visible window edges, drawn at the
+        // wall bodies' inner faces (set by updateWalls). Slate fill with a lit
+        // inner edge so the hard boundary reads clearly against the dark arena.
+        const wallTop = camera.worldToScreen(0, SANDBOX_WALL_CENTER_Y - SANDBOX_WALL_HEIGHT / 2).y;
+        const wallH = SANDBOX_WALL_HEIGHT * camera.zoom;
+        const barW = SANDBOX_WALL_RENDER_WIDTH * camera.zoom;
+        const edge = Math.max(2, barW * 0.28);
+        const leftEdgeX = camera.worldToScreen(this._wallLeftX ?? SANDBOX_FLOOR_LEFT, 0).x;
+        const rightEdgeX = camera.worldToScreen(this._wallRightX ?? SANDBOX_FLOOR_RIGHT, 0).x;
+        // Left wall extends inward (right) from the left window edge.
+        ctx.fillStyle = '#2a3350';
+        ctx.fillRect(leftEdgeX, wallTop, barW, wallH);
+        ctx.fillStyle = '#3f4a78';
+        ctx.fillRect(leftEdgeX + barW - edge, wallTop, edge, wallH);
+        // Right wall extends inward (left) from the right window edge.
+        ctx.fillStyle = '#2a3350';
+        ctx.fillRect(rightEdgeX - barW, wallTop, barW, wallH);
+        ctx.fillStyle = '#3f4a78';
+        ctx.fillRect(rightEdgeX - barW, wallTop, edge, wallH);
 
         // Grid overlay
         ctx.strokeStyle = 'rgba(255,255,255,0.02)';
