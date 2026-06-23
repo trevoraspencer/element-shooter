@@ -1,7 +1,7 @@
 // UI: menus, pickers, toolbar wiring
 
 // Sandbox tools that are mutually-exclusive selections (vs. toggles/actions)
-const SELECTABLE_TOOLS = ['spawn', 'drag', 'delete', 'explode', 'freeze'];
+const SELECTABLE_TOOLS = ['spawn', 'drag', 'delete', 'explode', 'freeze', 'place'];
 
 class UI {
     constructor(game) {
@@ -220,6 +220,18 @@ class UI {
         }
         wpnSelect.addEventListener('change', () => {
             this.game.sandbox.selectedWeapon = wpnSelect.value;
+        });
+
+        // Structure select dropdown (creator mode)
+        const structSelect = document.getElementById('sandbox-structure-select');
+        for (const key of STRUCTURE_KEYS) {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = `${STRUCTURES[key].icon} ${STRUCTURES[key].name}`;
+            structSelect.appendChild(opt);
+        }
+        structSelect.addEventListener('change', () => {
+            this.game.sandbox.selectedStructure = structSelect.value;
         });
 
         // Menu return

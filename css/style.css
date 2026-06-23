@@ -930,7 +930,8 @@ body.reduced-motion *::after {
 }
 
 #sandbox-element-select,
-#sandbox-weapon-select {
+#sandbox-weapon-select,
+#sandbox-structure-select {
     font-family: var(--font-mono);
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border);
@@ -945,13 +946,16 @@ body.reduced-motion *::after {
 
 #sandbox-element-select:hover,
 #sandbox-weapon-select:hover,
+#sandbox-structure-select:hover,
 #sandbox-element-select:focus,
-#sandbox-weapon-select:focus {
+#sandbox-weapon-select:focus,
+#sandbox-structure-select:focus {
     border-color: var(--border-hover);
 }
 
 #sandbox-element-select option,
-#sandbox-weapon-select option {
+#sandbox-weapon-select option,
+#sandbox-structure-select option {
     background: var(--bg-deep);
     color: var(--text-1);
 }

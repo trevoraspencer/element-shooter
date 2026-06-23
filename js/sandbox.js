@@ -43,8 +43,29 @@ const SANDBOX_FLOOR_RIGHT = 4000;
 const SANDBOX_FLOOR_WIDTH = SANDBOX_FLOOR_RIGHT - SANDBOX_FLOOR_LEFT;
 const SANDBOX_FLOOR_CENTER_X = (SANDBOX_FLOOR_LEFT + SANDBOX_FLOOR_RIGHT) / 2;
 const SANDBOX_FLOOR_TOP = 720;
-const SANDBOX_WALL_INSET = 10;
 const SANDBOX_PLATFORM_HEIGHT = 20;
+// Boundary walls are pinned to the visible browser-window edges (not the arena
+// extents) so elements can't roam off-screen. The camera is static in sandbox,
+// so the view stays centered on this world point.
+const SANDBOX_CAMERA_CENTER_X = 1000;
+const SANDBOX_CAMERA_CENTER_Y = 300;
+const SANDBOX_WALL_THICKNESS = 40;
+const SANDBOX_WALL_CENTER_Y = 350;
+const SANDBOX_WALL_HEIGHT = 920;
+const SANDBOX_WALL_RENDER_WIDTH = 14;
+
+// Pure: given the static camera's world origin (cameraX), viewport width, and
+// zoom, return the center x of each boundary wall body so that the wall's inner
+// face lines up exactly with the corresponding visible window edge. The visible
+// world span is [cameraX, cameraX + width / zoom] (see Camera.screenToWorld).
+function computeBoundaryWallX(cameraX, cameraWidth, cameraZoom, wallThickness) {
+    const leftEdge = cameraX;
+    const rightEdge = cameraX + cameraWidth / cameraZoom;
+    return {
+        left: leftEdge - wallThickness / 2,
+        right: rightEdge + wallThickness / 2,
+    };
+}
 // Platform definitions (center x/y, width) shared by the physics bodies and rendering.
 const SANDBOX_PLATFORMS = [
     { x: 500, y: 550, w: 300 },
@@ -67,6 +88,14 @@ class SandboxMode {
         this.entities = [];
         this.projectiles = [];
         this.maxEntities = 50;
+
+        // Structures (creator mode)
+        this.structures = [];
+        this.selectedStructure = 'house';
+        this.placeGhost = null;
+        // Tracks live structure part bodies so update() can detect when combat
+        // destroys one and refresh the grounding cache / drop empty structures.
+        this._lastStructureBodyCount = 0;
 
         // Drag state
         this.dragBody = null;
@@ -95,7 +124,7 @@ class SandboxMode {
 
         // Set world bounds for sandbox
         this.game.camera.setWorldBounds(SANDBOX_FLOOR_LEFT, -500, SANDBOX_FLOOR_RIGHT, 1200);
-        this.game.camera.setPosition(1000, 300);
+        this.game.camera.setPosition(SANDBOX_CAMERA_CENTER_X, SANDBOX_CAMERA_CENTER_Y);
 
         // Create ground and walls
         this.createArena();
@@ -134,24 +163,38 @@ class SandboxMode {
             label: 'wall',
         });
 
-        // Walls (tall enough to span from ceiling to ground)
-        this.wallL = Bodies.rectangle(SANDBOX_FLOOR_LEFT - SANDBOX_WALL_INSET, 350, 40, 920, {
-            isStatic: true,
-            collisionFilter: {
-                category: CAT.WALL,
-                mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+        // Boundary walls — created here, then pinned to the visible window edges
+        // by updateWalls() so elements can't roam off-screen. Tall enough to span
+        // from ceiling to ground. Initial x is a placeholder.
+        this.wallL = Bodies.rectangle(
+            0,
+            SANDBOX_WALL_CENTER_Y,
+            SANDBOX_WALL_THICKNESS,
+            SANDBOX_WALL_HEIGHT,
+            {
+                isStatic: true,
+                collisionFilter: {
+                    category: CAT.WALL,
+                    mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+                },
+                label: 'wall',
             },
-            label: 'wall',
-        });
+        );
 
-        this.wallR = Bodies.rectangle(SANDBOX_FLOOR_RIGHT + SANDBOX_WALL_INSET, 350, 40, 920, {
-            isStatic: true,
-            collisionFilter: {
-                category: CAT.WALL,
-                mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+        this.wallR = Bodies.rectangle(
+            0,
+            SANDBOX_WALL_CENTER_Y,
+            SANDBOX_WALL_THICKNESS,
+            SANDBOX_WALL_HEIGHT,
+            {
+                isStatic: true,
+                collisionFilter: {
+                    category: CAT.WALL,
+                    mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+                },
+                label: 'wall',
             },
-            label: 'wall',
-        });
+        );
 
         // Platforms — built from the shared SANDBOX_PLATFORMS table
         const platforms = SANDBOX_PLATFORMS.map((p) =>
@@ -165,8 +208,75 @@ class SandboxMode {
             }),
         );
 
-        this.staticBodies = [this.ground, this.ceiling, this.wallL, this.wallR, ...platforms];
-        Composite.add(this.game.engine.world, this.staticBodies);
+        this.arenaBodies = [this.ground, this.ceiling, this.wallL, this.wallR, ...platforms];
+        this.staticBodies = [...this.arenaBodies];
+        Composite.add(this.game.engine.world, this.arenaBodies);
+
+        // Pin the boundary walls to the current window edges.
+        this.updateWalls();
+    }
+
+    // Pin the boundary walls to the current visible window edges and remember
+    // their inner-face world x for rendering. Called on arena creation and when
+    // the window resizes. The camera is static in sandbox, so the visible world
+    // span is fixed by the camera origin + viewport size.
+    updateWalls() {
+        if (!this.wallL || !this.wallR) return;
+        const cam = this.game.camera;
+        const { left, right } = computeBoundaryWallX(
+            cam.x,
+            cam.width,
+            cam.zoom,
+            SANDBOX_WALL_THICKNESS,
+        );
+        Matter.Body.setPosition(this.wallL, { x: left, y: SANDBOX_WALL_CENTER_Y });
+        Matter.Body.setPosition(this.wallR, { x: right, y: SANDBOX_WALL_CENTER_Y });
+        // Inner faces = the visible window edges (world coords), used by render.
+        this._wallLeftX = left + SANDBOX_WALL_THICKNESS / 2;
+        this._wallRightX = right - SANDBOX_WALL_THICKNESS / 2;
+    }
+
+    // The browser window resized: re-center the static camera on the arena and
+    // re-pin the boundary walls to the new window edges.
+    onResize() {
+        if (!this.active) return;
+        this.game.camera.setPosition(SANDBOX_CAMERA_CENTER_X, SANDBOX_CAMERA_CENTER_Y);
+        this.updateWalls();
+    }
+
+    // The grounding cache (this.staticBodies) = arena geometry + every live
+    // structure part body. Rebuilt whenever structures are placed/removed so
+    // isBodyGrounded (which reads this.staticBodies) sees roofs/ramparts.
+    rebuildStaticBodies() {
+        const structureBodies = [];
+        for (const s of this.structures) {
+            structureBodies.push(...s.partBodies());
+        }
+        this.staticBodies = [...(this.arenaBodies || []), ...structureBodies];
+        this._lastStructureBodyCount = structureBodies.length;
+    }
+
+    // Drops fully-destroyed structures and refreshes the grounding cache when
+    // combat has broken off any part (its body was removed by onPartDestroyed,
+    // so the cached body list and live body count drift). Cheap: a handful of
+    // structures, only rebuilds when the live body count actually changed.
+    pruneStructures() {
+        if (!this.structures.length) return;
+
+        let changed = false;
+        for (let i = this.structures.length - 1; i >= 0; i--) {
+            if (this.structures[i].isEmpty()) {
+                this.structures.splice(i, 1);
+                changed = true;
+            }
+        }
+
+        let liveBodies = 0;
+        for (const s of this.structures) liveBodies += s.partBodies().length;
+
+        if (changed || liveBodies !== this._lastStructureBodyCount) {
+            this.rebuildStaticBodies();
+        }
     }
 
     setupMouseHandlers() {
@@ -191,6 +301,9 @@ class SandboxMode {
                 case 'freeze':
                     this.freezeAt(world.x, world.y);
                     break;
+                case 'place':
+                    this.placeStructure(world.x);
+                    break;
             }
         };
 
@@ -213,6 +326,17 @@ class SandboxMode {
                     y: world.y,
                 };
             }
+
+            if (this.currentTool === 'place') {
+                // Only preview over the play area — hovering the toolbar/menu
+                // clears the ghost so it never looks "stuck" to the UI.
+                if (e.target === canvas) {
+                    const world = this.game.camera.screenToWorld(e.clientX, e.clientY);
+                    this.placeGhost = { x: world.x, groundY: SANDBOX_FLOOR_TOP };
+                } else {
+                    this.placeGhost = null;
+                }
+            }
         };
 
         this.mouseUpHandler = (e) => {
@@ -220,10 +344,41 @@ class SandboxMode {
             this.endDrag();
         };
 
+        // Leaving the canvas hides the placement ghost.
+        this.mouseLeaveHandler = () => {
+            this.placeGhost = null;
+        };
+
+        // Right-click cancels placement (revert to the spawn tool).
+        this.contextMenuHandler = (e) => {
+            if (!this.active || this.currentTool !== 'place') return;
+            e.preventDefault();
+            this.cancelPlacement();
+        };
+
+        // Escape also cancels placement.
+        this.keyDownHandler = (e) => {
+            if (!this.active || this.currentTool !== 'place') return;
+            if (e.key === 'Escape') this.cancelPlacement();
+        };
+
         canvas.addEventListener('click', this.mouseHandler);
         canvas.addEventListener('mousedown', this.mouseDownHandler);
+        canvas.addEventListener('mouseleave', this.mouseLeaveHandler);
+        canvas.addEventListener('contextmenu', this.contextMenuHandler);
         window.addEventListener('mousemove', this.mouseMoveHandler);
         window.addEventListener('mouseup', this.mouseUpHandler);
+        window.addEventListener('keydown', this.keyDownHandler);
+    }
+
+    // Exit the place tool: clear the ghost and switch back to the spawn tool
+    // (clicking the button reuses the toolbar's selection logic so the UI stays
+    // in sync). Falls back to setting the tool directly if the button is absent.
+    cancelPlacement() {
+        this.placeGhost = null;
+        const spawnBtn = document.querySelector('[data-tool="spawn"]');
+        if (spawnBtn) spawnBtn.click();
+        else this.currentTool = 'spawn';
     }
 
     spawnElement(x, y) {
@@ -315,7 +470,16 @@ class SandboxMode {
         return 'wanderer';
     }
 
+    placeStructure(x) {
+        const structure = new Structure(this.selectedStructure, x, SANDBOX_FLOOR_TOP);
+        structure.addToWorld(this.game.engine.world);
+        this.structures.push(structure);
+        this.rebuildStaticBodies();
+        playSound('pickup');
+    }
+
     deleteAt(x, y) {
+        // Elements first, so clicking an element inside a structure removes it.
         for (let i = this.entities.length - 1; i >= 0; i--) {
             const ent = this.entities[i];
             if (!ent.alive) continue;
@@ -324,6 +488,17 @@ class SandboxMode {
                 ent.destroy();
                 this.entities.splice(i, 1);
                 this.updateEntityCount();
+                return;
+            }
+        }
+
+        // Then structures — remove the whole structure under the cursor.
+        for (let i = this.structures.length - 1; i >= 0; i--) {
+            const s = this.structures[i];
+            if (s.containsPoint(x, y)) {
+                s.removeFromWorld(this.game.engine.world);
+                this.structures.splice(i, 1);
+                this.rebuildStaticBodies();
                 return;
             }
         }
@@ -348,6 +523,17 @@ class SandboxMode {
                 });
             }
         }
+
+        // Structures take splash damage from the explode tool too.
+        damageStructuresInRadius(
+            this.structures,
+            x,
+            y,
+            150,
+            40,
+            this.game.effects,
+            this.game.engine.world,
+        );
     }
 
     freezeAt(x, y) {
@@ -411,6 +597,12 @@ class SandboxMode {
             proj.destroy();
         }
         this.projectiles = [];
+
+        for (const s of this.structures) {
+            s.removeFromWorld(this.game.engine.world);
+        }
+        this.structures = [];
+        this.rebuildStaticBodies();
 
         this.updateEntityCount();
     }
@@ -476,6 +668,9 @@ class SandboxMode {
 
         this.projectiles = this.projectiles.filter((p) => p.alive);
 
+        // Refresh structure state after any combat damage this frame.
+        this.pruneStructures();
+
         this.updateEntityCount();
     }
 
@@ -484,6 +679,11 @@ class SandboxMode {
 
         // Draw arena
         this.renderArena(ctx, camera);
+
+        // Draw placed structures (behind entities so occupants render on top)
+        for (const s of this.structures) {
+            s.render(ctx, camera);
+        }
 
         // Draw entities
         for (const ent of this.entities) {
@@ -515,6 +715,17 @@ class SandboxMode {
             ctx.setLineDash([5, 5]);
             ctx.stroke();
             ctx.restore();
+        }
+
+        // Draw placement ghost for the place tool
+        if (this.currentTool === 'place' && this.placeGhost) {
+            renderStructureGhost(
+                ctx,
+                camera,
+                this.selectedStructure,
+                this.placeGhost.x,
+                this.placeGhost.groundY,
+            );
         }
     }
 
@@ -551,16 +762,30 @@ class SandboxMode {
             ctx.strokeRect(s.x, s.y, w, h);
         }
 
-        // Walls (full height from ceiling to ground)
+        // Ceiling — spans the visible arena width
         ctx.fillStyle = '#151530';
-        let wall = camera.worldToScreen(SANDBOX_FLOOR_LEFT - 20, -110);
-        ctx.fillRect(wall.x, wall.y, 20 * camera.zoom, 900 * camera.zoom);
-        wall = camera.worldToScreen(SANDBOX_FLOOR_RIGHT, -110);
-        ctx.fillRect(wall.x, wall.y, 20 * camera.zoom, 900 * camera.zoom);
+        const ceil = camera.worldToScreen(SANDBOX_FLOOR_LEFT - 20, -110);
+        ctx.fillRect(ceil.x, ceil.y, (SANDBOX_FLOOR_WIDTH + 40) * camera.zoom, 60 * camera.zoom);
 
-        // Ceiling
-        wall = camera.worldToScreen(SANDBOX_FLOOR_LEFT - 20, -110);
-        ctx.fillRect(wall.x, wall.y, (SANDBOX_FLOOR_WIDTH + 40) * camera.zoom, 60 * camera.zoom);
+        // Boundary walls — bars flush with the visible window edges, drawn at the
+        // wall bodies' inner faces (set by updateWalls). Slate fill with a lit
+        // inner edge so the hard boundary reads clearly against the dark arena.
+        const wallTop = camera.worldToScreen(0, SANDBOX_WALL_CENTER_Y - SANDBOX_WALL_HEIGHT / 2).y;
+        const wallH = SANDBOX_WALL_HEIGHT * camera.zoom;
+        const barW = SANDBOX_WALL_RENDER_WIDTH * camera.zoom;
+        const edge = Math.max(2, barW * 0.28);
+        const leftEdgeX = camera.worldToScreen(this._wallLeftX ?? SANDBOX_FLOOR_LEFT, 0).x;
+        const rightEdgeX = camera.worldToScreen(this._wallRightX ?? SANDBOX_FLOOR_RIGHT, 0).x;
+        // Left wall extends inward (right) from the left window edge.
+        ctx.fillStyle = '#2a3350';
+        ctx.fillRect(leftEdgeX, wallTop, barW, wallH);
+        ctx.fillStyle = '#3f4a78';
+        ctx.fillRect(leftEdgeX + barW - edge, wallTop, edge, wallH);
+        // Right wall extends inward (left) from the right window edge.
+        ctx.fillStyle = '#2a3350';
+        ctx.fillRect(rightEdgeX - barW, wallTop, barW, wallH);
+        ctx.fillStyle = '#3f4a78';
+        ctx.fillRect(rightEdgeX - barW, wallTop, edge, wallH);
 
         // Grid overlay
         ctx.strokeStyle = 'rgba(255,255,255,0.02)';
@@ -587,20 +812,25 @@ class SandboxMode {
         this.active = false;
         this.clearAll();
 
-        // Remove static bodies
-        if (this.staticBodies) {
-            for (const b of this.staticBodies) {
+        // Remove arena geometry (clearAll already dropped any structures)
+        if (this.arenaBodies) {
+            for (const b of this.arenaBodies) {
                 Matter.Composite.remove(this.game.engine.world, b);
             }
-            this.staticBodies = [];
+            this.arenaBodies = [];
         }
+        this.staticBodies = [];
+        this.placeGhost = null;
 
         // Remove event listeners
         if (this.mouseHandler) {
             this.game.canvas.removeEventListener('click', this.mouseHandler);
             this.game.canvas.removeEventListener('mousedown', this.mouseDownHandler);
+            this.game.canvas.removeEventListener('mouseleave', this.mouseLeaveHandler);
+            this.game.canvas.removeEventListener('contextmenu', this.contextMenuHandler);
             window.removeEventListener('mousemove', this.mouseMoveHandler);
             window.removeEventListener('mouseup', this.mouseUpHandler);
+            window.removeEventListener('keydown', this.keyDownHandler);
         }
 
         this.endDrag();

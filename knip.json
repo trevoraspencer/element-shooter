@@ -6,6 +6,7 @@
         "js/effects.js",
         "js/element-entity.js",
         "js/weapons.js",
+        "js/structures.js",
         "js/player.js",
         "js/ai.js",
         "js/camera.js",
