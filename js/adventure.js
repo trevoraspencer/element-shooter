@@ -739,10 +739,6 @@ class AdventureMode {
                     }
                 }
 
-                // Unlock elements
-                if (progress.elements) {
-                    this.unlockedElements = new Set(progress.elements);
-                }
                 this.applyLevelElementUnlocks();
             }
         } catch (error) {
