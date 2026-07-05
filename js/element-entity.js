@@ -11,7 +11,6 @@ class ElementEntity {
         this.maxHealth = data.health;
         this.health = data.health;
         this.alive = true;
-        this.invulnTimer = 0;
 
         // Weapon
         this.weapon = null;
@@ -72,7 +71,6 @@ class ElementEntity {
         this.entitiesContext = entities;
 
         this.fireCooldown = Math.max(0, this.fireCooldown - dt * (this.fireRateMultiplier || 1));
-        this.invulnTimer = Math.max(0, this.invulnTimer - dt);
         this.flashTimer = Math.max(0, this.flashTimer - dt);
         this.specialTimer = Math.max(
             0,
