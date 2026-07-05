@@ -101,7 +101,7 @@ This installs dev-only dependencies (ESLint, Prettier, Vitest, Husky, lint-stage
 
 ### Pre-commit hooks
 
-[Husky](https://typicode.github.io/husky/) + [lint-staged](https://github.com/lint-config/lint-staged) run automatically on every commit:
+[Husky](https://typicode.github.io/husky/) + [lint-staged](https://github.com/lint-staged/lint-staged) run automatically on every commit:
 
 - **`*.js` files** — ESLint fix + Prettier write
 - **`*.{css,html,md}` files** — Prettier write
@@ -112,6 +112,9 @@ Tests live in `__tests__/` and use [Vitest](https://vitest.dev/). Coverage inclu
 
 - **`utils.test.js`** — math helpers, color helpers, collision categories, configuration constants, settings functions
 - **`elements-data.test.js`** — element definitions, sorting, special configs, effectiveness multipliers, damage resolution, level unlocks, status effects
+- **`boss-phases.test.js`** — per-level boss phase config data and phase-op handler behavior (minion spawns, buffs, danger zones, effects)
+- **`sandbox-walls.test.js`** — sandbox boundary-wall placement at the visible window edges across zoom and window sizes
+- **`structures.test.js`** — structure prefab table, part layout, damage/destruction, and radius damage to structures
 
 ```bash
 npm test              # run all tests once

@@ -447,12 +447,16 @@ describe('SOUND_LIMITS', () => {
 // ─── Screen shake ──────────────────────────────────────────────────────
 
 describe('SCREEN_SHAKE_CONFIG', () => {
-    it('bodySlam intensity is 8', () => {
-        expect(utils.SCREEN_SHAKE_CONFIG.bodySlam).toBe(8);
-    });
-
     it('explosion intensity is 10', () => {
         expect(utils.SCREEN_SHAKE_CONFIG.explosion).toBe(10);
+    });
+
+    it('sandboxExplosion intensity is 15', () => {
+        expect(utils.SCREEN_SHAKE_CONFIG.sandboxExplosion).toBe(15);
+    });
+
+    it('death intensity is 8', () => {
+        expect(utils.SCREEN_SHAKE_CONFIG.death).toBe(8);
     });
 
     it('nuclear intensity is 20', () => {

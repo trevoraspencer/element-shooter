@@ -117,7 +117,6 @@ describe('PHASE_OPS handler behavior', () => {
     function makeCtx(overrides = {}) {
         const ctx = {
             entities: [],
-            phaseTimers: [],
             level: { width: 3000 },
             dangerZones: [],
             bossEntity: {
@@ -234,9 +233,10 @@ describe('PHASE_OPS handler behavior', () => {
         // Buffed immediately.
         expect(ctx.bossEntity.data.speed).toBe(10);
         expect(ctx.bossEntity.fireRateMultiplier).toBe(2);
-        expect(ctx.phaseTimers).toHaveLength(1);
-        // setManagedTimeout returned the fn; invoke it to simulate the 10s restore.
-        ctx.phaseTimers[0]();
+        expect(ctx.setManagedTimeout).toHaveBeenCalledTimes(1);
+        expect(ctx.setManagedTimeout).toHaveBeenCalledWith(expect.any(Function), 10000);
+        // Invoke the scheduled restore fn to simulate the 10s timeout firing.
+        ctx.setManagedTimeout.mock.calls[0][0]();
         expect(ctx.bossEntity.data.speed).toBe(5);
         expect(ctx.bossEntity.fireRateMultiplier).toBe(1);
     });

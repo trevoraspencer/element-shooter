@@ -32,7 +32,6 @@ const BODY_SLAM_CONFIG = {
 };
 
 const SCREEN_SHAKE_CONFIG = {
-    bodySlam: 8,
     explosion: 10,
     sandboxExplosion: 15,
     death: 8,

@@ -19,7 +19,6 @@ beforeEach(() => {
 function createDefender(overrides = {}) {
     return {
         alive: true,
-        invulnTimer: 0,
         health: overrides.health ?? 100,
         flashTimer: 0,
         data: overrides.data ?? { special: 'none' },
@@ -308,13 +307,6 @@ describe('resolveElementDamage', () => {
 
     it('returns 0 if defender is not alive', () => {
         const defender = createDefender({ alive: false });
-        const damage = elements.resolveElementDamage(defender, 10, createEffects());
-        expect(damage).toBe(0);
-        expect(defender.health).toBe(100);
-    });
-
-    it('returns 0 if defender is invulnerable (invulnTimer > 0)', () => {
-        const defender = createDefender({ invulnTimer: 1 });
         const damage = elements.resolveElementDamage(defender, 10, createEffects());
         expect(damage).toBe(0);
         expect(defender.health).toBe(100);

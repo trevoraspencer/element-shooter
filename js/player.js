@@ -132,40 +132,13 @@ class Player {
         const chain = ent.special.chain;
         if (chain && ent.specialTimer <= 0 && this.mouseDown) {
             ent.specialTimer = chain.cooldown;
-            this.chainLightning(ent, entities, effects);
+            ent.chainLightning(entities, effects);
         }
     }
 
     isGrounded(engine) {
         if (!this.entity) return false;
         return isBodyGrounded(engine, this.entity.body, this.entity.data.radius);
-    }
-
-    chainLightning(entity, entities, effects) {
-        const pos = entity.body.position;
-        const chain = entity.special.chain;
-        const range = chain.range;
-        let targets = entities
-            .filter(
-                (e) =>
-                    e !== entity &&
-                    e.alive &&
-                    e.team !== entity.team &&
-                    dist(pos.x, pos.y, e.body.position.x, e.body.position.y) < range,
-            )
-            .slice(0, chain.maxTargets);
-
-        let prev = pos;
-        for (const t of targets) {
-            resolveElementDamage(t, chain.damage, effects, entity, entities, {
-                attackerSpecial: entity.data.special,
-                status: 'shocked',
-            });
-            if (effects) {
-                effects.electricArc(prev.x, prev.y, t.body.position.x, t.body.position.y);
-            }
-            prev = t.body.position;
-        }
     }
 
     addScore(amount) {

@@ -220,7 +220,7 @@ class Projectile {
             const pos = this.body.position;
             effects.explosion(pos.x, pos.y, this.wpn.projectileColor, 25, 350);
             playSound('explode');
-            triggerScreenShake(10);
+            triggerScreenShake(SCREEN_SHAKE_CONFIG.explosion);
 
             // AoE damage
             if (entities) {

@@ -214,7 +214,7 @@ class EffectsSystem {
     deathExplosion(x, y, color) {
         this.explosion(x, y, color, 30, 400);
         this.explosion(x, y, '#ffffff', 10, 200);
-        triggerScreenShake(8);
+        triggerScreenShake(SCREEN_SHAKE_CONFIG.death);
     }
 
     // Nuclear death explosion
@@ -222,7 +222,7 @@ class EffectsSystem {
         this.explosion(x, y, '#88ffcc', 50, 600);
         this.explosion(x, y, '#ffffff', 30, 400);
         this.explosion(x, y, '#44ff88', 20, 300);
-        triggerScreenShake(20);
+        triggerScreenShake(SCREEN_SHAKE_CONFIG.nuclear);
         playSound('explode');
     }
 

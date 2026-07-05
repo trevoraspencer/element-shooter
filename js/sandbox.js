@@ -107,9 +107,6 @@ class SandboxMode {
 
         // Mouse tracking for sandbox tools
         this.mouseHandler = null;
-
-        // Preset execution guard (prevents rapid-click duplication)
-        this._presetExecuting = false;
     }
 
     start() {
@@ -419,14 +416,8 @@ class SandboxMode {
     }
 
     executePreset(presetIndex) {
-        if (this._presetExecuting) return;
-        this._presetExecuting = true;
-
         const preset = SANDBOX_PRESETS[presetIndex];
-        if (!preset) {
-            this._presetExecuting = false;
-            return;
-        }
+        if (!preset) return;
 
         // Clear arena first
         this.clearAll();
@@ -461,7 +452,6 @@ class SandboxMode {
         }
 
         this.updateEntityCount();
-        this._presetExecuting = false;
     }
 
     getAIForTeam(team) {
@@ -685,12 +675,8 @@ class SandboxMode {
             s.render(ctx, camera);
         }
 
-        // Draw entities
+        // Draw entities — ElementEntity.render culls off-screen entities itself.
         for (const ent of this.entities) {
-            if (
-                !isCircleOnScreen(ent.body.position.x, ent.body.position.y, ent.data.radius, camera)
-            )
-                continue;
             ent.render(ctx, camera);
         }
 

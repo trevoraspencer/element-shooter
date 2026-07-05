@@ -729,7 +729,7 @@ function resolveElementDamage(
     entities = null,
     options = {},
 ) {
-    if (!defender || !defender.alive || defender.invulnTimer > 0) return 0;
+    if (!defender || !defender.alive) return 0;
 
     const attackerSpecial = options.attackerSpecial || attacker?.data?.special || 'none';
     const special = getSpecialConfig(defender.data.special);
