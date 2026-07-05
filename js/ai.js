@@ -108,6 +108,15 @@ class AIController {
 
         // Magnetic special
         ent.applyMagnetic(entities);
+
+        // Electric chain special — fires while in attack state, mirroring the
+        // player's fire-button gate (Player.update). Like the player path, the
+        // cooldown spends even when no enemy is inside chain.range.
+        const chain = ent.special.chain;
+        if (chain && ent.specialTimer <= 0 && this.state === 'attack') {
+            ent.specialTimer = chain.cooldown;
+            ent.chainLightning(entities, effects);
+        }
     }
 
     findTarget(entities) {

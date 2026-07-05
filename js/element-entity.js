@@ -279,6 +279,36 @@ class ElementEntity {
         }
     }
 
+    // Electric chain special (Cu/Pd) — zap up to chain.maxTargets enemies
+    // within chain.range. Callers gate on special.chain and specialTimer,
+    // the same pattern Player.update and AIController.update use.
+    chainLightning(entities, effects) {
+        const chain = this.special.chain;
+        if (!chain || !entities) return;
+        const pos = this.body.position;
+        const targets = entities
+            .filter(
+                (e) =>
+                    e !== this &&
+                    e.alive &&
+                    e.team !== this.team &&
+                    dist(pos.x, pos.y, e.body.position.x, e.body.position.y) < chain.range,
+            )
+            .slice(0, chain.maxTargets);
+
+        let prev = pos;
+        for (const t of targets) {
+            resolveElementDamage(t, chain.damage, effects, this, entities, {
+                attackerSpecial: this.data.special,
+                status: 'shocked',
+            });
+            if (effects) {
+                effects.electricArc(prev.x, prev.y, t.body.position.x, t.body.position.y);
+            }
+            prev = t.body.position;
+        }
+    }
+
     // Magnetic pull (Fe special)
     applyMagnetic(entities) {
         const magnetic = this.special.magnetic;
