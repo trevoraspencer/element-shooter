@@ -78,10 +78,10 @@ class AIController {
         // Execute behavior
         switch (this.state) {
             case 'idle':
-                this.doIdle(dt, engine);
+                this.doIdle(dt);
                 break;
             case 'wander':
-                this.doWander(dt, engine);
+                this.doWander(dt);
                 break;
             case 'chase':
                 this.doChase(dt, engine);
@@ -163,7 +163,7 @@ class AIController {
         }
     }
 
-    doIdle(dt, engine) {
+    doIdle(dt) {
         // Just stand around
         this.wanderTimer -= dt;
         if (this.wanderTimer <= 0) {
@@ -173,7 +173,7 @@ class AIController {
         }
     }
 
-    doWander(dt, engine) {
+    doWander(dt) {
         const body = this.entity.body;
         const moveForce = 0.001 * body.mass * (this.entity.data.speed / 5);
 
