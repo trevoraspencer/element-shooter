@@ -101,7 +101,7 @@ class Game {
 
                 // Body slam (element vs element)
                 if (a.label === 'element' && b.label === 'element') {
-                    this.handleBodySlam(a.entity, b.entity, pair);
+                    this.handleBodySlam(a.entity, b.entity);
                 }
             }
         });
@@ -123,7 +123,7 @@ class Game {
         projectile.onHit(null, this.getAllEntities(), this.effects);
     }
 
-    handleBodySlam(entA, entB, pair) {
+    handleBodySlam(entA, entB) {
         if (!entA || !entB || !entA.alive || !entB.alive) return;
         if (entA.team === entB.team && entA.team !== 'neutral') return;
 
