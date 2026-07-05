@@ -600,19 +600,19 @@ const PHASE_OPS = {
     },
 
     // Temporarily multiply boss speed + fire rate, restoring after op.duration.
+    // Cancellation is handled by setManagedTimeout/clearTimers via this.timers.
     statBuff(op) {
         const boss = this.bossEntity;
         const origSpeed = boss.data.speed;
         const origFireRate = boss.fireRateMultiplier || 1;
         boss.data = { ...boss.data, speed: boss.data.speed * op.speedMult };
         boss.fireRateMultiplier = origFireRate * op.fireRateMult;
-        const timer = this.setManagedTimeout(() => {
+        this.setManagedTimeout(() => {
             if (boss.alive && boss.data) {
                 boss.data = { ...boss.data, speed: origSpeed };
                 boss.fireRateMultiplier = origFireRate;
             }
         }, op.duration * 1000);
-        this.phaseTimers.push(timer);
     },
 
     // Visual/audio flourish at the boss position. color: 'boss' = boss's own color.
@@ -676,7 +676,6 @@ class AdventureMode {
         this.bossEntity = null;
         this.bossPhaseTriggered = false;
         this.dangerZones = [];
-        this.phaseTimers = [];
 
         // Pause toggle — Escape / P during active play.
         window.addEventListener('keydown', (e) => {
@@ -845,7 +844,6 @@ class AdventureMode {
         this.bossEntity = null;
         this.bossPhaseTriggered = false;
         this.dangerZones = [];
-        this.phaseTimers = [];
         this.hideUpgradePanel();
         this.entities = [];
         this.projectiles = [];
