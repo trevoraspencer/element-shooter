@@ -675,12 +675,8 @@ class SandboxMode {
             s.render(ctx, camera);
         }
 
-        // Draw entities
+        // Draw entities — ElementEntity.render culls off-screen entities itself.
         for (const ent of this.entities) {
-            if (
-                !isCircleOnScreen(ent.body.position.x, ent.body.position.y, ent.data.radius, camera)
-            )
-                continue;
             ent.render(ctx, camera);
         }
 
