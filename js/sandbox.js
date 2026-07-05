@@ -339,7 +339,7 @@ class SandboxMode {
             }
         };
 
-        this.mouseUpHandler = (e) => {
+        this.mouseUpHandler = () => {
             if (!this.active) return;
             this.endDrag();
         };
