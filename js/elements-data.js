@@ -636,12 +636,32 @@ const AURA_CONFIG = {
 //   takenMul:   multiplier on incoming damage while afflicted.
 //   color:      tint for tick-damage popup.
 const STATUS_EFFECTS = {
-    burning: { dot: 4, color: '#ff8800' },
-    toxic: { dot: 3, color: '#88ff00' },
-    irradiated: { dot: 2, color: '#44ff88' },
-    corroded: { dot: 2, takenMul: 1.15, color: '#aaff44' },
-    frozen: { velocityMul: 0.4, color: '#88ccff' },
-    shocked: { takenMul: 1.2, color: '#44ddff' },
+    burning: { dot: 4, color: '#ff8800', label: 'BURN' },
+    toxic: { dot: 3, color: '#88ff00', label: 'TOXIC' },
+    irradiated: { dot: 2, color: '#44ff88', label: 'RAD' },
+    corroded: { dot: 2, takenMul: 1.15, color: '#aaff44', label: 'CORRODE' },
+    frozen: { velocityMul: 0.4, color: '#88ccff', label: 'FREEZE' },
+    shocked: { takenMul: 1.2, color: '#44ddff', label: 'SHOCK' },
+};
+
+const DAMAGE_FEEDBACK = {
+    effectiveThreshold: 1.05,
+    resistedThreshold: 0.95,
+    normal: { type: 'normal', color: '#ff4444', suffix: '', scale: 1 },
+    effective: {
+        type: 'effective',
+        color: '#ffd166',
+        suffix: '!',
+        scale: 1.15,
+        label: 'EFFECTIVE',
+    },
+    resisted: {
+        type: 'resisted',
+        color: '#8ecae6',
+        suffix: '',
+        scale: 0.9,
+        label: 'RESIST',
+    },
 };
 
 const SPECIALS = {
@@ -721,6 +741,91 @@ function getEffectivenessMultiplier(attacker, defender) {
     return ELEMENT_EFFECTIVENESS[attackerKey]?.[defenderKey] || 1;
 }
 
+function getDamageModifiers(defender, attackerSpecial = 'none') {
+    const special = getSpecialConfig(defender.data.special);
+    const effectiveness = getEffectivenessMultiplier({ special: attackerSpecial }, defender);
+    const defense =
+        typeof special.damageTakenMultiplier === 'number' ? special.damageTakenMultiplier : 1;
+    let status = 1;
+
+    for (const [key] of defender.statuses || []) {
+        const cfg = STATUS_EFFECTS[key];
+        if (cfg?.takenMul) status *= cfg.takenMul;
+    }
+
+    return {
+        effectiveness,
+        defense,
+        status,
+        total: effectiveness * defense * status,
+    };
+}
+
+function getDamageFeedback(multiplier) {
+    if (multiplier >= DAMAGE_FEEDBACK.effectiveThreshold) {
+        return DAMAGE_FEEDBACK.effective;
+    }
+    if (multiplier <= DAMAGE_FEEDBACK.resistedThreshold) {
+        return DAMAGE_FEEDBACK.resisted;
+    }
+    return DAMAGE_FEEDBACK.normal;
+}
+
+function getStatusFeedback(statusKey) {
+    const cfg = STATUS_EFFECTS[statusKey];
+    return {
+        text:
+            cfg?.label ||
+            statusKey
+                .replace(/^phase_/, '')
+                .replace(/_/g, ' ')
+                .toUpperCase(),
+        color: cfg?.color || '#ffffff',
+    };
+}
+
+function shouldShowStatusFeedback(defender, statusKey, duration) {
+    const current = defender.statuses?.get(statusKey);
+    return !current || duration > (current.remaining || 0) + 0.1;
+}
+
+function showDamageFeedback(effects, defender, resolved, feedback) {
+    const x = defender.body.position.x;
+    const y = defender.body.position.y;
+    effects.damageNumber(x, y, resolved, feedback.color, {
+        suffix: feedback.suffix,
+        scale: feedback.scale,
+    });
+
+    if (feedback.label && typeof effects.floatingText === 'function') {
+        effects.floatingText(x, y, feedback.label, feedback.color, {
+            yOffset: -38,
+            fontSize: 11,
+            life: 0.65,
+            scale: 0.85,
+            riseSpeed: 28,
+        });
+    }
+}
+
+function showStatusFeedback(effects, defender, statusKey) {
+    if (!statusKey || typeof effects.floatingText !== 'function') return;
+    const feedback = getStatusFeedback(statusKey);
+    effects.floatingText(
+        defender.body.position.x,
+        defender.body.position.y,
+        feedback.text,
+        feedback.color,
+        {
+            yOffset: -52,
+            fontSize: 11,
+            life: 0.7,
+            scale: 0.85,
+            riseSpeed: 24,
+        },
+    );
+}
+
 function resolveElementDamage(
     defender,
     amount,
@@ -732,28 +837,22 @@ function resolveElementDamage(
     if (!defender || !defender.alive) return 0;
 
     const attackerSpecial = options.attackerSpecial || attacker?.data?.special || 'none';
-    const special = getSpecialConfig(defender.data.special);
-    let resolved = amount * getEffectivenessMultiplier({ special: attackerSpecial }, defender);
-
-    if (typeof special.damageTakenMultiplier === 'number') {
-        resolved *= special.damageTakenMultiplier;
-    }
-
-    // Per-status take-damage multipliers (shocked, corroded, …)
-    for (const [key] of defender.statuses) {
-        const cfg = STATUS_EFFECTS[key];
-        if (cfg?.takenMul) resolved *= cfg.takenMul;
-    }
+    const modifiers = getDamageModifiers(defender, attackerSpecial);
+    const resolved = amount * modifiers.total;
+    const statusDuration = options.statusDuration || 1.5;
+    const showStatus =
+        options.status && shouldShowStatusFeedback(defender, options.status, statusDuration);
 
     if (options.status) {
-        defender.addStatus(options.status, options.statusDuration || 1.5, attacker);
+        defender.addStatus(options.status, statusDuration, attacker);
     }
 
     defender.health -= resolved;
     defender.flashTimer = 0.15;
 
     if (effects) {
-        effects.damageNumber(defender.body.position.x, defender.body.position.y, resolved);
+        showDamageFeedback(effects, defender, resolved, getDamageFeedback(modifiers.total));
+        if (showStatus) showStatusFeedback(effects, defender, options.status);
         effects.sparks(defender.body.position.x, defender.body.position.y, defender.data.color);
     }
 

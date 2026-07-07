@@ -501,7 +501,7 @@ const LEVELS = [
     },
 ];
 
-const PROGRESS_SCHEMA_VERSION = 1;
+const PROGRESS_SCHEMA_VERSION = 2;
 const DEFAULT_UNLOCKED_LEVELS = [true, false, false, false, false, false, false];
 const PICKUP_CONFIG = {
     lifetime: 20,
@@ -510,6 +510,128 @@ const PICKUP_CONFIG = {
     baseHeal: 15,
     maxHeal: 40,
 };
+const MASTERY_HEALTH_GOAL = 0.6;
+const MASTERY_LABELS = ['Uncleared', 'Bronze', 'Silver', 'Gold'];
+const LEVEL_MASTERY_GOALS = [
+    { parTime: 165 },
+    { parTime: 210 },
+    { parTime: 210 },
+    { parTime: 230 },
+    { parTime: 245 },
+    { parTime: 255 },
+    { parTime: 285 },
+];
+
+function toFiniteNumber(value, fallback) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+}
+
+function createDefaultLevelRecord() {
+    return {
+        completions: 0,
+        bestScore: 0,
+        bestTime: null,
+        bestHealthPct: 0,
+        bestMastery: 0,
+    };
+}
+
+function createDefaultLevelRecords() {
+    return LEVELS.map(() => createDefaultLevelRecord());
+}
+
+function normalizeLevelRecord(record) {
+    if (!record || typeof record !== 'object') return createDefaultLevelRecord();
+
+    const bestTime = toFiniteNumber(record.bestTime, 0);
+    return {
+        completions: Math.max(0, Math.floor(toFiniteNumber(record.completions, 0))),
+        bestScore: Math.max(0, Math.floor(toFiniteNumber(record.bestScore, 0))),
+        bestTime: bestTime > 0 ? bestTime : null,
+        bestHealthPct: clamp(toFiniteNumber(record.bestHealthPct, 0), 0, 1),
+        bestMastery: Math.round(clamp(toFiniteNumber(record.bestMastery, 0), 0, 3)),
+    };
+}
+
+function normalizeLevelRecords(records) {
+    const defaults = createDefaultLevelRecords();
+    if (!Array.isArray(records)) return defaults;
+    return defaults.map((defaultRecord, index) =>
+        normalizeLevelRecord(records[index] || defaultRecord),
+    );
+}
+
+function calculateLevelMastery(levelIndex, clearTime, healthPct) {
+    const goal = LEVEL_MASTERY_GOALS[levelIndex] || LEVEL_MASTERY_GOALS[0];
+    let mastery = 1;
+    if (clearTime > 0 && clearTime <= goal.parTime) mastery++;
+    if (healthPct >= MASTERY_HEALTH_GOAL) mastery++;
+    return mastery;
+}
+
+function getMasteryLabel(mastery) {
+    return MASTERY_LABELS[Math.round(clamp(toFiniteNumber(mastery, 0), 0, 3))];
+}
+
+function formatDuration(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '--:--';
+    const totalSeconds = Math.round(seconds);
+    const minutes = Math.floor(totalSeconds / 60);
+    const remainingSeconds = String(totalSeconds % 60).padStart(2, '0');
+    return `${minutes}:${remainingSeconds}`;
+}
+
+function formatLevelRecord(record) {
+    const normalized = normalizeLevelRecord(record);
+    if (normalized.completions === 0) return 'No clears yet';
+    return `${getMasteryLabel(normalized.bestMastery)} (${normalized.bestMastery}/3) | ${formatDuration(
+        normalized.bestTime,
+    )} | ${normalized.bestScore} pts`;
+}
+
+function buildLevelCompletionStats(levelIndex, score, clearTime, playerEntity) {
+    const maxHealth = Math.max(1, toFiniteNumber(playerEntity?.maxHealth, 1));
+    const currentHealth = clamp(toFiniteNumber(playerEntity?.health, 0), 0, maxHealth);
+    const healthPct = currentHealth / maxHealth;
+    const roundedTime = Math.max(0, Math.round(toFiniteNumber(clearTime, 0) * 10) / 10);
+    return {
+        levelIndex,
+        score: Math.max(0, Math.floor(toFiniteNumber(score, 0))),
+        clearTime: roundedTime,
+        healthPct: Math.round(healthPct * 1000) / 1000,
+        mastery: calculateLevelMastery(levelIndex, roundedTime, healthPct),
+    };
+}
+
+function mergeLevelRecord(record, runStats) {
+    const current = normalizeLevelRecord(record);
+    const score = Math.max(0, Math.floor(toFiniteNumber(runStats?.score, 0)));
+    const clearTime = Math.max(0, toFiniteNumber(runStats?.clearTime, 0));
+    const healthPct = clamp(toFiniteNumber(runStats?.healthPct, 0), 0, 1);
+    const mastery = Math.round(clamp(toFiniteNumber(runStats?.mastery, 1), 1, 3));
+    const nextRecord = {
+        completions: current.completions + 1,
+        bestScore: Math.max(current.bestScore, score),
+        bestTime:
+            clearTime > 0 && (current.bestTime === null || clearTime < current.bestTime)
+                ? clearTime
+                : current.bestTime,
+        bestHealthPct: Math.max(current.bestHealthPct, healthPct),
+        bestMastery: Math.max(current.bestMastery, mastery),
+    };
+
+    return {
+        record: nextRecord,
+        improvements: {
+            firstClear: current.completions === 0,
+            score: score > current.bestScore,
+            time: nextRecord.bestTime !== current.bestTime,
+            health: healthPct > current.bestHealthPct,
+            mastery: mastery > current.bestMastery,
+        },
+    };
+}
 
 // Boss "phase 2" abilities, expressed as data. Each level.boss.phase is a list of
 // ops run in order by triggerBossPhase. Handlers are invoked with `this` bound to
@@ -666,11 +788,14 @@ class AdventureMode {
         this.timers = [];
         this.unlockedLevels = [...DEFAULT_UNLOCKED_LEVELS];
         this.unlockedElements = new Set(STARTER_ELEMENTS);
+        this.levelRecords = createDefaultLevelRecords();
         this.paused = false;
 
         // Upgrade state
         this.currentUpgradeChoices = [];
         this.appliedUpgrades = [];
+        this.levelElapsed = 0;
+        this.lastRunStats = null;
 
         // Boss phase state
         this.bossEntity = null;
@@ -718,7 +843,10 @@ class AdventureMode {
     togglePause() {
         this.paused = !this.paused;
         const overlay = document.getElementById('pause-overlay');
-        if (overlay) overlay.classList.toggle('hidden', !this.paused);
+        if (overlay) {
+            overlay.classList.toggle('hidden', !this.paused);
+            overlay.setAttribute('aria-hidden', this.paused ? 'false' : 'true');
+        }
     }
 
     loadProgress() {
@@ -730,6 +858,7 @@ class AdventureMode {
                 if (!progress) return;
                 this.unlockedLevels = progress.levels;
                 this.unlockedElements = new Set(progress.elements);
+                this.levelRecords = progress.records;
 
                 // Unlock weapons
                 if (progress.weapons) {
@@ -755,6 +884,7 @@ class AdventureMode {
                     levels: this.unlockedLevels,
                     weapons: unlockedWeapons,
                     elements: Array.from(this.unlockedElements),
+                    records: this.levelRecords,
                 }),
             );
         } catch (error) {
@@ -764,7 +894,10 @@ class AdventureMode {
 
     normalizeProgress(data) {
         if (!data || typeof data !== 'object') return false;
-        if (data.version !== undefined && data.version !== PROGRESS_SCHEMA_VERSION) return false;
+        const version = data.version ?? 1;
+        if (!Number.isInteger(version) || version < 1 || version > PROGRESS_SCHEMA_VERSION) {
+            return false;
+        }
 
         const levels =
             Array.isArray(data.levels) && data.levels.every((v) => typeof v === 'boolean')
@@ -780,8 +913,9 @@ class AdventureMode {
             Array.isArray(data.weapons) && data.weapons.every((key) => WEAPONS[key])
                 ? data.weapons
                 : STARTER_WEAPONS;
+        const records = normalizeLevelRecords(data.records);
 
-        return { levels, elements, weapons };
+        return { levels, elements, weapons, records };
     }
 
     createStarField(level, levelIndex) {
@@ -809,6 +943,14 @@ class AdventureMode {
 
     isElementUnlocked(key) {
         return this.unlockedElements.has(key);
+    }
+
+    getLevelRecord(levelIndex) {
+        return normalizeLevelRecord(this.levelRecords[levelIndex]);
+    }
+
+    getLevelRecordSummary(levelIndex) {
+        return formatLevelRecord(this.getLevelRecord(levelIndex));
     }
 
     setManagedTimeout(fn, delay) {
@@ -841,6 +983,8 @@ class AdventureMode {
         this.paused = false;
         this.appliedUpgrades = [];
         this.currentUpgradeChoices = [];
+        this.levelElapsed = 0;
+        this.lastRunStats = null;
         this.bossEntity = null;
         this.bossPhaseTriggered = false;
         this.dangerZones = [];
@@ -1196,6 +1340,7 @@ class AdventureMode {
     update(dt) {
         if (!this.active) return;
         if (this.isSimulationPaused()) return;
+        if (this.state === 'playing') this.levelElapsed += dt;
 
         const player = this.game.player;
 
@@ -1424,6 +1569,20 @@ class AdventureMode {
         this.state = 'complete_pending';
         this.announceWave('LEVEL COMPLETE!');
 
+        const runStats = buildLevelCompletionStats(
+            this.currentLevel,
+            this.game.player.score,
+            this.levelElapsed,
+            this.game.player.entity,
+        );
+        const merged = mergeLevelRecord(this.levelRecords[this.currentLevel], runStats);
+        this.levelRecords[this.currentLevel] = merged.record;
+        this.lastRunStats = {
+            ...runStats,
+            improvements: merged.improvements,
+            record: merged.record,
+        };
+
         // Unlock next level
         if (this.currentLevel + 1 < LEVELS.length) {
             this.unlockedLevels[this.currentLevel + 1] = true;
@@ -1471,9 +1630,28 @@ class AdventureMode {
         const text = document.getElementById('game-over-text');
 
         title.textContent = won ? 'Level Complete!' : 'Game Over';
-        text.textContent = `Score: ${this.game.player.score}`;
+        text.textContent =
+            won && this.lastRunStats
+                ? this.formatCompletionSummary(this.lastRunStats)
+                : `Score: ${this.game.player.score}`;
 
         screen.classList.remove('hidden');
+        screen.setAttribute('aria-hidden', 'false');
+    }
+
+    formatCompletionSummary(stats) {
+        const summary = [
+            `Score: ${stats.score}`,
+            `Time: ${formatDuration(stats.clearTime)}`,
+            `Mastery: ${getMasteryLabel(stats.mastery)} (${stats.mastery}/3)`,
+        ];
+        const newBests = [];
+        if (stats.improvements.firstClear) newBests.push('clear');
+        if (stats.improvements.mastery) newBests.push('mastery');
+        if (stats.improvements.time) newBests.push('time');
+        if (stats.improvements.score) newBests.push('score');
+        if (newBests.length > 0) summary.push(`New best: ${newBests.join(', ')}`);
+        return summary.join(' | ');
     }
 
     isSimulationPaused() {
@@ -1690,8 +1868,13 @@ class AdventureMode {
         this.hideUpgradePanel();
         this.appliedUpgrades = [];
         this.currentUpgradeChoices = [];
+        this.levelElapsed = 0;
+        this.lastRunStats = null;
         const overlay = document.getElementById('pause-overlay');
-        if (overlay) overlay.classList.add('hidden');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
         this.clearTimers();
         document.querySelector('.wave-announce')?.remove();
         document.querySelector('.phase-announce')?.remove();
@@ -1717,6 +1900,7 @@ class AdventureMode {
         document.getElementById('hud').classList.add('hidden');
         document.getElementById('adventure-hud').classList.add('hidden');
         document.getElementById('game-over-screen').classList.add('hidden');
+        document.getElementById('game-over-screen').setAttribute('aria-hidden', 'true');
 
         this.game.player.reset();
     }

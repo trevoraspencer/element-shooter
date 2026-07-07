@@ -32,10 +32,10 @@ class EffectsSystem {
         // Update damage numbers
         for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
             const d = this.damageNumbers[i];
-            d.y -= 40 * dt;
+            d.y -= (d.riseSpeed ?? 40) * dt;
             d.life -= dt;
             d.alpha = Math.max(0, d.life / d.maxLife);
-            d.scale = 1 + (1 - d.alpha) * 0.3;
+            d.scale = (d.baseScale ?? 1) + (1 - d.alpha) * (d.scaleGrowth ?? 0.3);
             if (d.life <= 0) this.damageNumbers.splice(i, 1);
         }
 
@@ -81,7 +81,7 @@ class EffectsSystem {
             const screen = camera.worldToScreen(d.x, d.y);
             ctx.save();
             ctx.globalAlpha = d.alpha;
-            ctx.font = `bold ${Math.round(16 * d.scale)}px monospace`;
+            ctx.font = `bold ${Math.round((d.fontSize ?? 16) * d.scale)}px monospace`;
             ctx.textAlign = 'center';
             ctx.fillStyle = d.color;
             ctx.strokeStyle = 'rgba(0,0,0,0.6)';
@@ -155,45 +155,45 @@ class EffectsSystem {
         }
     }
 
-    // Damage number popup
-    damageNumber(x, y, amount, color = '#ff4444') {
+    // Generic floating combat text.
+    floatingText(x, y, text, color = '#ffffff', options = {}) {
+        const life = options.life ?? 1.0;
+        const xJitter = options.randomX === false ? 0 : (options.xJitter ?? 10);
+        const baseScale = options.scale ?? 1;
         this.pushDamageNumber({
-            x: x + randRange(-10, 10),
-            y: y - 20,
-            text: `-${Math.round(amount)}`,
+            x: x + (xJitter ? randRange(-xJitter, xJitter) : 0),
+            y: y + (options.yOffset ?? -20),
+            text,
             color,
-            life: 1.0,
-            maxLife: 1.0,
+            life,
+            maxLife: options.maxLife ?? life,
             alpha: 1,
-            scale: 1,
+            scale: baseScale,
+            baseScale,
+            scaleGrowth: options.scaleGrowth ?? 0.3,
+            riseSpeed: options.riseSpeed ?? 40,
+            fontSize: options.fontSize ?? 16,
         });
+    }
+
+    // Damage number popup
+    damageNumber(x, y, amount, color = '#ff4444', options = {}) {
+        const prefix = options.prefix ?? '-';
+        const suffix = options.suffix ?? '';
+        this.floatingText(x, y, `${prefix}${Math.round(amount)}${suffix}`, color, options);
     }
 
     // Heal number popup
     healNumber(x, y, amount) {
-        this.pushDamageNumber({
-            x: x + randRange(-10, 10),
-            y: y - 20,
-            text: `+${Math.round(amount)}`,
-            color: '#44ff44',
-            life: 1.0,
-            maxLife: 1.0,
-            alpha: 1,
-            scale: 1,
-        });
+        this.floatingText(x, y, `+${Math.round(amount)}`, '#44ff44');
     }
 
     // Score popup
     scorePopup(x, y, amount) {
-        this.pushDamageNumber({
-            x,
-            y: y - 30,
-            text: `+${amount}`,
-            color: '#ffd700',
+        this.floatingText(x, y, `+${amount}`, '#ffd700', {
+            randomX: false,
+            yOffset: -30,
             life: 1.5,
-            maxLife: 1.5,
-            alpha: 1,
-            scale: 1,
         });
     }
 

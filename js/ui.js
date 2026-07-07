@@ -2,10 +2,39 @@
 
 // Sandbox tools that are mutually-exclusive selections (vs. toggles/actions)
 const SELECTABLE_TOOLS = ['spawn', 'drag', 'delete', 'explode', 'freeze', 'place'];
+const GRID_NAV_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+const GRID_NAV_CARD_SELECTOR = '.element-card, .weapon-card, .level-card';
+
+function getGridNavigationIndex(currentIndex, itemCount, columns, key) {
+    if (itemCount <= 0) return -1;
+
+    const safeColumns = Math.max(1, columns || 1);
+    const lastIndex = itemCount - 1;
+
+    if (key === 'Home') return 0;
+    if (key === 'End') return lastIndex;
+    if (key === 'ArrowLeft') return Math.max(0, currentIndex - 1);
+    if (key === 'ArrowRight') return Math.min(lastIndex, currentIndex + 1);
+    if (key === 'ArrowUp') return Math.max(0, currentIndex - safeColumns);
+    if (key === 'ArrowDown') return Math.min(lastIndex, currentIndex + safeColumns);
+
+    return currentIndex;
+}
+
+function focusElement(el) {
+    if (!el) return;
+
+    try {
+        el.focus({ preventScroll: true });
+    } catch {
+        el.focus();
+    }
+}
 
 class UI {
     constructor(game) {
         this.game = game;
+        this.activePickerBack = null;
         this.setupMainMenu();
         this.setupElementPicker();
         this.setupWeaponPicker();
@@ -13,6 +42,8 @@ class UI {
         this.setupSandboxToolbar();
         this.setupGameOver();
         this.setupSettings();
+        this.setupOverlayShortcuts();
+        this.showMainMenu();
     }
 
     setupMainMenu() {
@@ -28,6 +59,7 @@ class UI {
     }
 
     setupElementPicker() {
+        this.setupGridNavigation('element-grid');
         this.refreshElementGrid();
 
         document.getElementById('btn-picker-back').addEventListener('click', () => {
@@ -63,9 +95,12 @@ class UI {
             });
             grid.appendChild(card);
         });
+
+        this.resetGridNavigation(grid);
     }
 
     setupWeaponPicker() {
+        this.setupGridNavigation('weapon-grid');
         this.refreshWeaponGrid();
 
         document.getElementById('btn-weapon-back').addEventListener('click', () => {
@@ -96,9 +131,12 @@ class UI {
             });
             grid.appendChild(card);
         });
+
+        this.resetGridNavigation(grid);
     }
 
     setupLevelSelect() {
+        this.setupGridNavigation('level-grid');
         this.refreshLevelGrid();
 
         document.getElementById('btn-level-back').addEventListener('click', () => {
@@ -133,6 +171,14 @@ class UI {
                     }),
                 );
             }
+            const record = adventure.getLevelRecord(i);
+            if (record.completions > 0) {
+                info.append(
+                    this.makeDiv('level-desc', `Best: ${adventure.getLevelRecordSummary(i)}`, {
+                        color: '#88ffcc',
+                    }),
+                );
+            }
             card.append(this.makeSpan('level-num', i + 1), info);
             this.makeActivatable(card, unlocked, `Level ${i + 1}: ${level.name}`, () => {
                 this.hideAll();
@@ -140,13 +186,14 @@ class UI {
             });
             grid.appendChild(card);
         }
+
+        this.resetGridNavigation(grid);
     }
 
     makeActivatable(el, enabled, label, onActivate) {
         el.setAttribute('role', 'button');
         el.setAttribute('aria-label', label);
         if (enabled) {
-            el.tabIndex = 0;
             el.addEventListener('click', onActivate);
             el.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -157,6 +204,66 @@ class UI {
         } else {
             el.setAttribute('aria-disabled', 'true');
         }
+        el.tabIndex = -1;
+    }
+
+    setupGridNavigation(gridId) {
+        const grid = document.getElementById(gridId);
+        if (!grid) return;
+
+        grid.addEventListener('keydown', (e) => {
+            if (!GRID_NAV_KEYS.includes(e.key)) return;
+
+            const cards = this.getEnabledGridCards(grid);
+            const currentCard = e.target.closest(GRID_NAV_CARD_SELECTOR);
+            const currentIndex = cards.indexOf(currentCard);
+            if (currentIndex < 0) return;
+
+            e.preventDefault();
+            const columns = this.getGridColumnCount(grid);
+            const nextIndex = getGridNavigationIndex(currentIndex, cards.length, columns, e.key);
+            const nextCard = cards[nextIndex];
+            if (!nextCard || nextCard === currentCard) return;
+
+            this.setGridActiveCard(grid, nextCard);
+            focusElement(nextCard);
+        });
+    }
+
+    getEnabledGridCards(grid) {
+        return [...grid.querySelectorAll(GRID_NAV_CARD_SELECTOR)].filter(
+            (card) => card.getAttribute('aria-disabled') !== 'true',
+        );
+    }
+
+    getGridColumnCount(grid) {
+        if (grid.classList.contains('level-grid')) return 1;
+
+        const style = window.getComputedStyle?.(grid);
+        const template = style?.gridTemplateColumns || '';
+        const columns = template.split(' ').filter(Boolean).length;
+        return Math.max(1, columns || 1);
+    }
+
+    resetGridNavigation(grid) {
+        const cards = this.getEnabledGridCards(grid);
+        this.setGridActiveCard(grid, cards[0]);
+    }
+
+    setGridActiveCard(grid, activeCard) {
+        for (const card of this.getEnabledGridCards(grid)) {
+            card.tabIndex = card === activeCard ? 0 : -1;
+        }
+    }
+
+    focusGrid(gridId) {
+        const grid = document.getElementById(gridId);
+        if (!grid) return;
+
+        const cards = this.getEnabledGridCards(grid);
+        const activeCard = cards.find((card) => card.tabIndex === 0) || cards[0];
+        this.setGridActiveCard(grid, activeCard);
+        focusElement(activeCard);
     }
 
     setupSandboxToolbar() {
@@ -285,6 +392,15 @@ class UI {
         volume.addEventListener('input', () => setMasterVolume(volume.value));
     }
 
+    setupOverlayShortcuts() {
+        window.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || !this.activePickerBack) return;
+
+            e.preventDefault();
+            this.activePickerBack();
+        });
+    }
+
     makeEl(tag, className, text, style = null) {
         const el = document.createElement(tag);
         el.className = className;
@@ -303,29 +419,49 @@ class UI {
 
     showMainMenu() {
         this.hideAll();
-        document.getElementById('main-menu').classList.remove('hidden');
+        this.setOverlayVisible('main-menu', true);
+        this.activePickerBack = null;
+        focusElement(document.getElementById('btn-sandbox'));
     }
 
     showElementPicker() {
+        this.hideAll();
         this.refreshElementGrid();
-        document.getElementById('element-picker').classList.remove('hidden');
+        this.setOverlayVisible('element-picker', true);
+        this.activePickerBack = () => this.showMainMenu();
+        this.focusGrid('element-grid');
     }
 
     showWeaponPicker() {
+        this.hideAll();
         this.refreshWeaponGrid();
-        document.getElementById('weapon-picker').classList.remove('hidden');
+        this.setOverlayVisible('weapon-picker', true);
+        this.activePickerBack = () => this.showElementPicker();
+        this.focusGrid('weapon-grid');
     }
 
     showLevelSelect() {
+        this.hideAll();
         this.refreshLevelGrid();
-        document.getElementById('level-select').classList.remove('hidden');
+        this.setOverlayVisible('level-select', true);
+        this.activePickerBack = () => this.showWeaponPicker();
+        this.focusGrid('level-grid');
     }
 
     hideAll() {
-        document.getElementById('main-menu').classList.add('hidden');
-        document.getElementById('element-picker').classList.add('hidden');
-        document.getElementById('weapon-picker').classList.add('hidden');
-        document.getElementById('level-select').classList.add('hidden');
-        document.getElementById('game-over-screen').classList.add('hidden');
+        this.activePickerBack = null;
+        this.setOverlayVisible('main-menu', false);
+        this.setOverlayVisible('element-picker', false);
+        this.setOverlayVisible('weapon-picker', false);
+        this.setOverlayVisible('level-select', false);
+        this.setOverlayVisible('game-over-screen', false);
+    }
+
+    setOverlayVisible(id, visible) {
+        const overlay = document.getElementById(id);
+        if (!overlay) return;
+
+        overlay.classList.toggle('hidden', !visible);
+        overlay.setAttribute('aria-hidden', visible ? 'false' : 'true');
     }
 }
