@@ -824,6 +824,7 @@ body.reduced-motion *::after {
     left: 50%;
     transform: translateX(-50%);
     z-index: 50;
+    max-width: calc(100vw - 16px);
     background: rgba(4, 8, 16, 0.88);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -958,6 +959,7 @@ body.reduced-motion *::after {
 #sandbox-weapon-select,
 #sandbox-structure-select {
     font-family: var(--font-mono);
+    max-width: min(180px, 28vw);
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border);
     color: var(--text-1);
@@ -1317,6 +1319,19 @@ body.reduced-motion *::after {
 }
 
 /* === RESPONSIVE === */
+@media (max-width: 1460px) {
+    #sandbox-toolbar {
+        left: 8px;
+        right: 8px;
+        transform: none;
+        max-width: none;
+        max-height: 45vh;
+        justify-content: center;
+        flex-wrap: wrap;
+        overflow-y: auto;
+    }
+}
+
 @media (max-width: 760px) {
     .menu-content {
         width: min(100% - 32px, 420px);
