@@ -8,8 +8,8 @@ A 2D physics sandbox and arena shooter built around the periodic table. Vanilla 
 - 6 weapons (photon blaster, shotgun, cannon, beam, fusion, gravity well)
 - 14 element specials: aura damage, projectile reflect, chain lightning, explosive death, magnetic pull, status effects, and more
 - Element effectiveness matrix — burn vs. freeze, corrosive vs. armor, electric vs. shield, etc.
-- **Sandbox mode**: free spawning, team battles (A/B/Neutral), drag, explode, freeze, gravity flip, slow-mo. 50-entity cap. Battle presets for instant chaos (Tiny H vs Giant Pu, Magnet War, Noble Gas Escape, Boss Rush, Random Army).
-- **Adventure mode**: 7 hand-built levels with 4 enemy waves + a boss each, weapon rewards on completion, progress saved to `localStorage`. Upgrade choices between waves — pick from 7 roguelike upgrades (max health, speed, jump, fire rate, damage, regen, special cooldown). Boss phase transitions at 50% health with unique effects (minion spawns, magnetic pull, decoy clones, radioactive zones, shields, speed bursts).
+- **Sandbox mode**: free spawning, team battles (A/B/Neutral), drag, explode, freeze, gravity flip, slow-mo, and placeable destructible structures. 50-entity cap. Battle presets for instant chaos (Tiny H vs Giant Pu, Magnet War, Noble Gas Escape, Boss Rush, Random Army, Fort Siege).
+- **Adventure mode**: 7 hand-built levels with 4 enemy waves + a boss each, weapon rewards on completion, progress saved to `localStorage`, and per-level best score/time/mastery records for replay goals. Upgrade choices between waves — pick from 7 roguelike upgrades (max health, speed, jump, fire rate, damage, regen, special cooldown). Boss phase transitions at 50% health with unique effects (minion spawns, magnetic pull, decoy clones, radioactive zones, shields, speed bursts).
 - AI state machine with four behavior presets (aggressive, defensive, wanderer, berserker)
 - Synthesized audio via Web Audio API — no audio files in the repo
 - Reduced-motion setting honored across particles, screen shake, and animations
@@ -66,6 +66,7 @@ js/
   effects.js            # particles, trails, damage numbers
   element-entity.js     # entity wrapping a Matter.js body
   weapons.js            # WEAPONS table and Projectile class
+  structures.js         # destructible sandbox structures
   player.js             # input handling
   ai.js                 # AI state machine and behavior presets
   camera.js             # smooth-follow camera with world bounds
@@ -113,6 +114,7 @@ Tests live in `__tests__/` and use [Vitest](https://vitest.dev/). Coverage inclu
 - **`utils.test.js`** — math helpers, color helpers, collision categories, configuration constants, settings functions
 - **`elements-data.test.js`** — element definitions, sorting, special configs, effectiveness multipliers, damage resolution, level unlocks, status effects
 - **`boss-phases.test.js`** — per-level boss phase config data and phase-op handler behavior (minion spawns, buffs, danger zones, effects)
+- **`index-contract.test.js`** — `index.html` script order, CDN/SRI contract, local JS coverage, duplicate top-level declarations, and ordered source loading
 - **`sandbox-walls.test.js`** — sandbox boundary-wall placement at the visible window edges across zoom and window sizes
 - **`structures.test.js`** — structure prefab table, part layout, damage/destruction, and radius damage to structures
 

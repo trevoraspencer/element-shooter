@@ -34,6 +34,7 @@ function createDefender(overrides = {}) {
 function createEffects() {
     return {
         damageNumber: vi.fn(),
+        floatingText: vi.fn(),
         sparks: vi.fn(),
     };
 }
@@ -398,7 +399,57 @@ describe('resolveElementDamage', () => {
         const defender = createDefender();
         const effects = createEffects();
         elements.resolveElementDamage(defender, 10, effects);
-        expect(effects.damageNumber).toHaveBeenCalledWith(0, 0, 10);
+        expect(effects.damageNumber).toHaveBeenCalledWith(
+            0,
+            0,
+            10,
+            '#ff4444',
+            expect.objectContaining({ scale: 1, suffix: '' }),
+        );
+    });
+
+    it('highlights effective damage when modifiers increase the hit', () => {
+        const defender = createDefender({ data: { special: 'reactive', color: '#cc80ff' } });
+        const effects = createEffects();
+        const damage = elements.resolveElementDamage(defender, 10, effects, null, null, {
+            attackerSpecial: 'burn',
+        });
+        expect(damage).toBeCloseTo(12.5);
+        expect(effects.damageNumber).toHaveBeenCalledWith(
+            0,
+            0,
+            12.5,
+            '#ffd166',
+            expect.objectContaining({ scale: 1.15, suffix: '!' }),
+        );
+        expect(effects.floatingText).toHaveBeenCalledWith(
+            0,
+            0,
+            'EFFECTIVE',
+            '#ffd166',
+            expect.objectContaining({ yOffset: -38 }),
+        );
+    });
+
+    it('highlights resisted damage when modifiers reduce the hit', () => {
+        const defender = createDefender({ data: { special: 'armor', color: '#c0c0c0' } });
+        const effects = createEffects();
+        const damage = elements.resolveElementDamage(defender, 20, effects);
+        expect(damage).toBe(14);
+        expect(effects.damageNumber).toHaveBeenCalledWith(
+            0,
+            0,
+            14,
+            '#8ecae6',
+            expect.objectContaining({ scale: 0.9, suffix: '' }),
+        );
+        expect(effects.floatingText).toHaveBeenCalledWith(
+            0,
+            0,
+            'RESIST',
+            '#8ecae6',
+            expect.objectContaining({ yOffset: -38 }),
+        );
     });
 
     it('calls effects.sparks with position and color', () => {
@@ -427,6 +478,33 @@ describe('resolveElementDamage', () => {
             statusDuration: 2,
         });
         expect(defender.addStatus).toHaveBeenCalledWith('burning', 2, null);
+    });
+
+    it('shows a status callout when a new status is applied', () => {
+        const defender = createDefender();
+        const effects = createEffects();
+        elements.resolveElementDamage(defender, 10, effects, null, null, {
+            status: 'burning',
+            statusDuration: 2,
+        });
+        expect(effects.floatingText).toHaveBeenCalledWith(
+            0,
+            0,
+            'BURN',
+            '#ff8800',
+            expect.objectContaining({ yOffset: -52 }),
+        );
+    });
+
+    it('does not repeat status callouts when an existing duration is stronger', () => {
+        const statuses = new Map([['burning', { remaining: 10 }]]);
+        const defender = createDefender({ statuses });
+        const effects = createEffects();
+        elements.resolveElementDamage(defender, 10, effects, null, null, {
+            status: 'burning',
+            statusDuration: 2,
+        });
+        expect(effects.floatingText).not.toHaveBeenCalled();
     });
 
     it('works with null effects (no damage number or sparks)', () => {
@@ -511,6 +589,12 @@ describe('STATUS_EFFECTS', () => {
     it('every status effect has a color', () => {
         for (const [key, cfg] of Object.entries(elements.STATUS_EFFECTS)) {
             expect(cfg.color, `STATUS_EFFECTS.${key}.color`).toBeDefined();
+        }
+    });
+
+    it('every status effect has a short combat label', () => {
+        for (const [key, cfg] of Object.entries(elements.STATUS_EFFECTS)) {
+            expect(cfg.label, `STATUS_EFFECTS.${key}.label`).toMatch(/^[A-Z ]{3,10}$/);
         }
     });
 });

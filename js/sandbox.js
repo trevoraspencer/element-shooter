@@ -1,6 +1,32 @@
 // Sandbox mode: spawn, drag, team battles, tools
 
-// Preset battle configurations
+// Arena extents — wide enough that the floor fills any reasonable viewport
+// (camera centers on world X=1000, so ±3000 from center covers 6000 px).
+const SANDBOX_FLOOR_LEFT = -2000;
+const SANDBOX_FLOOR_RIGHT = 4000;
+const SANDBOX_FLOOR_WIDTH = SANDBOX_FLOOR_RIGHT - SANDBOX_FLOOR_LEFT;
+const SANDBOX_FLOOR_CENTER_X = (SANDBOX_FLOOR_LEFT + SANDBOX_FLOOR_RIGHT) / 2;
+const SANDBOX_FLOOR_TOP = 720;
+const SANDBOX_PLATFORM_HEIGHT = 20;
+// Boundary walls are pinned to the visible browser-window edges (not the arena
+// extents) so elements can't roam off-screen. The camera is static in sandbox,
+// so the view stays centered on this world point.
+const SANDBOX_CAMERA_CENTER_X = 1000;
+const SANDBOX_CAMERA_CENTER_Y = 300;
+const SANDBOX_WALL_THICKNESS = 40;
+const SANDBOX_WALL_CENTER_Y = 350;
+const SANDBOX_WALL_HEIGHT = 920;
+const SANDBOX_WALL_RENDER_WIDTH = 14;
+const SANDBOX_PRESET_SPAWN_PADDING = 90;
+const SANDBOX_PRESET_SPAWN_ZONE = {
+    xMin: SANDBOX_CAMERA_CENTER_X - 500,
+    xMax: SANDBOX_CAMERA_CENTER_X + 500,
+    yMin: 400,
+    yMax: SANDBOX_FLOOR_TOP - 20,
+};
+
+// Preset battle configurations. Optional structures + spawn zones let presets
+// stage repeatable arena experiments without changing the free-form tools.
 const SANDBOX_PRESETS = [
     {
         name: 'Tiny H vs Giant Pu',
@@ -34,25 +60,35 @@ const SANDBOX_PRESETS = [
         name: 'Random Army',
         random: true,
     },
+    {
+        name: 'Fort Siege',
+        structures: [
+            { prefab: 'house', xRatio: 0.2 },
+            { prefab: 'tower', xRatio: 0.36 },
+            { prefab: 'fortress', xRatio: 0.5 },
+            { prefab: 'tower', xRatio: 0.64 },
+            { prefab: 'house', xRatio: 0.8 },
+        ],
+        teams: [
+            {
+                elements: ['C', 'S', 'O'],
+                count: 12,
+                team: 'a',
+                weapons: ['cannon', 'shotgun'],
+                ai: 'aggressive',
+                spawnZone: { xMinRatio: 0.04, xMaxRatio: 0.26, yMin: 430, yMax: 650 },
+            },
+            {
+                elements: ['Fe', 'Pb', 'Si'],
+                count: 8,
+                team: 'b',
+                weapons: ['photon', 'beam'],
+                ai: 'defensive',
+                spawnZone: { xMinRatio: 0.42, xMaxRatio: 0.76, yMin: 320, yMax: 520 },
+            },
+        ],
+    },
 ];
-
-// Arena extents — wide enough that the floor fills any reasonable viewport
-// (camera centers on world X=1000, so ±3000 from center covers 6000 px).
-const SANDBOX_FLOOR_LEFT = -2000;
-const SANDBOX_FLOOR_RIGHT = 4000;
-const SANDBOX_FLOOR_WIDTH = SANDBOX_FLOOR_RIGHT - SANDBOX_FLOOR_LEFT;
-const SANDBOX_FLOOR_CENTER_X = (SANDBOX_FLOOR_LEFT + SANDBOX_FLOOR_RIGHT) / 2;
-const SANDBOX_FLOOR_TOP = 720;
-const SANDBOX_PLATFORM_HEIGHT = 20;
-// Boundary walls are pinned to the visible browser-window edges (not the arena
-// extents) so elements can't roam off-screen. The camera is static in sandbox,
-// so the view stays centered on this world point.
-const SANDBOX_CAMERA_CENTER_X = 1000;
-const SANDBOX_CAMERA_CENTER_Y = 300;
-const SANDBOX_WALL_THICKNESS = 40;
-const SANDBOX_WALL_CENTER_Y = 350;
-const SANDBOX_WALL_HEIGHT = 920;
-const SANDBOX_WALL_RENDER_WIDTH = 14;
 
 // Pure: given the static camera's world origin (cameraX), viewport width, and
 // zoom, return the center x of each boundary wall body so that the wall's inner
@@ -66,6 +102,81 @@ function computeBoundaryWallX(cameraX, cameraWidth, cameraZoom, wallThickness) {
         right: rightEdge + wallThickness / 2,
     };
 }
+
+function computePresetSpawnZone(
+    cameraX,
+    cameraWidth,
+    cameraZoom,
+    padding = SANDBOX_PRESET_SPAWN_PADDING,
+) {
+    const leftEdge = cameraX;
+    const rightEdge = cameraX + cameraWidth / cameraZoom;
+    const halfSpan = (rightEdge - leftEdge) / 2;
+    const safePadding = Math.min(padding, Math.max(0, halfSpan - 20));
+
+    return {
+        xMin: leftEdge + safePadding,
+        xMax: rightEdge - safePadding,
+        yMin: SANDBOX_PRESET_SPAWN_ZONE.yMin,
+        yMax: SANDBOX_PRESET_SPAWN_ZONE.yMax,
+    };
+}
+
+function resolvePresetRatio(ratio, defaultZone) {
+    const t = Math.min(Math.max(ratio, 0), 1);
+    return defaultZone.xMin + (defaultZone.xMax - defaultZone.xMin) * t;
+}
+
+function resolvePresetX(value, ratio, defaultZone) {
+    if (Number.isFinite(value)) return value;
+    if (Number.isFinite(ratio)) return resolvePresetRatio(ratio, defaultZone);
+    return Number.NaN;
+}
+
+function resolvePresetZoneEdge(zone, valueKey, ratioKey, defaultZone) {
+    if (Number.isFinite(zone[valueKey])) return zone[valueKey];
+    if (Number.isFinite(zone[ratioKey])) return resolvePresetRatio(zone[ratioKey], defaultZone);
+    return defaultZone[valueKey];
+}
+
+function resolvePresetSpawnZone(teamConfig = {}, defaultZone = SANDBOX_PRESET_SPAWN_ZONE) {
+    const zone = teamConfig.spawnZone || {};
+    return {
+        xMin: resolvePresetZoneEdge(zone, 'xMin', 'xMinRatio', defaultZone),
+        xMax: resolvePresetZoneEdge(zone, 'xMax', 'xMaxRatio', defaultZone),
+        yMin: zone.yMin ?? defaultZone.yMin,
+        yMax: zone.yMax ?? defaultZone.yMax,
+    };
+}
+
+function randomPointInPresetZone(zone) {
+    return {
+        x: randRange(zone.xMin, zone.xMax),
+        y: randRange(zone.yMin, zone.yMax),
+    };
+}
+
+function getPresetStructurePlacements(preset, allowedKeys, layoutZone = SANDBOX_PRESET_SPAWN_ZONE) {
+    const validKeys =
+        allowedKeys || (typeof STRUCTURE_KEYS === 'undefined' ? null : STRUCTURE_KEYS);
+    const allowed = validKeys ? new Set(validKeys) : null;
+    const structures = preset?.structures || [];
+    const placements = [];
+
+    for (const placement of structures) {
+        if (allowed && !allowed.has(placement.prefab)) continue;
+        const x = resolvePresetX(placement.x, placement.xRatio, layoutZone);
+        if (!Number.isFinite(x)) continue;
+        placements.push({
+            prefab: placement.prefab,
+            x,
+            groundY: Number.isFinite(placement.groundY) ? placement.groundY : SANDBOX_FLOOR_TOP,
+        });
+    }
+
+    return placements;
+}
+
 // Platform definitions (center x/y, width) shared by the physics bodies and rendering.
 const SANDBOX_PLATFORMS = [
     { x: 500, y: 550, w: 300 },
@@ -404,13 +515,21 @@ class SandboxMode {
         this.updateEntityCount();
     }
 
-    spawnPresetEntity(x, y, elementKey, team) {
+    spawnPresetEntity(
+        x,
+        y,
+        elementKey,
+        team,
+        weaponPool = STARTER_WEAPONS,
+        aiBehavior = 'aggressive',
+    ) {
         if (this.entities.length >= this.maxEntities) return null;
 
         const ent = new ElementEntity(this.game.engine, x, y, elementKey, team);
-        const wpn = randChoice(STARTER_WEAPONS);
+        const pool = Array.isArray(weaponPool) && weaponPool.length ? weaponPool : STARTER_WEAPONS;
+        const wpn = randChoice(pool);
         ent.weapon = wpn;
-        ent.ai = new AIController(ent, 'aggressive');
+        ent.ai = new AIController(ent, aiBehavior || 'aggressive');
         this.entities.push(ent);
         return ent;
     }
@@ -422,10 +541,8 @@ class SandboxMode {
         // Clear arena first
         this.clearAll();
 
-        const xMin = SANDBOX_FLOOR_LEFT + 100;
-        const xMax = SANDBOX_FLOOR_RIGHT - 100;
-        const yMin = 400;
-        const yMax = SANDBOX_FLOOR_TOP - 20;
+        const presetZone = this.getPresetSpawnZone();
+        this.placePresetStructures(preset, presetZone);
 
         if (preset.random) {
             // Random Army: 10–30 random entities on random teams
@@ -433,20 +550,26 @@ class SandboxMode {
             const teams = ['a', 'b'];
             for (let i = 0; i < count; i++) {
                 if (this.entities.length >= this.maxEntities) break;
-                const x = randRange(xMin, xMax);
-                const y = randRange(yMin, yMax);
+                const point = randomPointInPresetZone(presetZone);
                 const elementKey = randChoice(ALL_ELEMENT_KEYS);
                 const team = randChoice(teams);
-                this.spawnPresetEntity(x, y, elementKey, team);
+                this.spawnPresetEntity(point.x, point.y, elementKey, team);
             }
         } else {
             for (const teamConfig of preset.teams) {
+                const zone = resolvePresetSpawnZone(teamConfig, presetZone);
                 for (let i = 0; i < teamConfig.count; i++) {
                     if (this.entities.length >= this.maxEntities) break;
-                    const x = randRange(xMin, xMax);
-                    const y = randRange(yMin, yMax);
+                    const point = randomPointInPresetZone(zone);
                     const elementKey = randChoice(teamConfig.elements);
-                    this.spawnPresetEntity(x, y, elementKey, teamConfig.team);
+                    this.spawnPresetEntity(
+                        point.x,
+                        point.y,
+                        elementKey,
+                        teamConfig.team,
+                        teamConfig.weapons,
+                        teamConfig.ai,
+                    );
                 }
             }
         }
@@ -460,12 +583,37 @@ class SandboxMode {
         return 'wanderer';
     }
 
-    placeStructure(x) {
-        const structure = new Structure(this.selectedStructure, x, SANDBOX_FLOOR_TOP);
+    getPresetSpawnZone() {
+        const cam = this.game.camera;
+        return computePresetSpawnZone(cam.x, cam.width, cam.zoom);
+    }
+
+    addStructure(prefabKey, x, groundY = SANDBOX_FLOOR_TOP) {
+        if (!STRUCTURES[prefabKey]) return null;
+
+        const structure = new Structure(prefabKey, x, groundY);
         structure.addToWorld(this.game.engine.world);
         this.structures.push(structure);
-        this.rebuildStaticBodies();
-        playSound('pickup');
+        return structure;
+    }
+
+    placeStructure(x) {
+        const structure = this.addStructure(this.selectedStructure, x);
+        if (structure) {
+            this.rebuildStaticBodies();
+            playSound('pickup');
+        }
+    }
+
+    placePresetStructures(preset, layoutZone = this.getPresetSpawnZone()) {
+        let added = false;
+        for (const placement of getPresetStructurePlacements(preset, STRUCTURE_KEYS, layoutZone)) {
+            if (this.addStructure(placement.prefab, placement.x, placement.groundY)) {
+                added = true;
+            }
+        }
+
+        if (added) this.rebuildStaticBodies();
     }
 
     deleteAt(x, y) {

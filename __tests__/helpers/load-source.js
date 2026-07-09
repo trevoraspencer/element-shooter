@@ -9,7 +9,7 @@ const root = join(__dirname, '..', '..');
  * Extract top-level declaration names from source code.
  * Captures const, let, var, function, and class declarations.
  */
-function extractNames(code) {
+export function extractTopLevelNames(code) {
     const names = new Set();
     for (const m of code.matchAll(/^(?:export\s+)?(?:const|let|var)\s+(\w+)/gm)) {
         names.add(m[1]);
@@ -35,7 +35,7 @@ function extractNames(code) {
 export function loadSource(filePath) {
     const fullPath = join(root, filePath);
     const code = readFileSync(fullPath, 'utf-8');
-    const names = extractNames(code);
+    const names = extractTopLevelNames(code);
 
     const wrappedCode = code + `\nreturn { ${names.join(', ')} };`;
     const fn = new Function(wrappedCode);

@@ -16,7 +16,18 @@
         <canvas id="game-canvas"></canvas>
 
         <!-- Main Menu -->
-        <div id="main-menu" class="menu-overlay">
+        <p id="picker-navigation-help" class="sr-only">
+            Use arrow keys to move through choices, Enter or Space to select, and Escape to go back.
+        </p>
+
+        <div
+            id="main-menu"
+            class="menu-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="main-menu-title"
+            aria-hidden="false"
+        >
             <div class="orbit-container" aria-hidden="true">
                 <div class="orbit orbit--sm"></div>
                 <div class="orbit orbit--md"></div>
@@ -25,7 +36,7 @@
                 <div class="nucleus-glow"></div>
             </div>
             <div class="menu-content">
-                <h1 class="game-title">ELEMENTS</h1>
+                <h1 id="main-menu-title" class="game-title">ELEMENTS</h1>
                 <p class="game-subtitle">2D Physics Sandbox</p>
                 <div class="menu-buttons">
                     <button class="menu-btn" id="btn-sandbox">Sandbox Mode</button>
@@ -44,27 +55,51 @@
         </div>
 
         <!-- Element Picker -->
-        <div id="element-picker" class="picker-overlay hidden">
+        <div
+            id="element-picker"
+            class="picker-overlay hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="element-picker-title"
+            aria-describedby="picker-navigation-help"
+            aria-hidden="true"
+        >
             <div class="picker-content">
-                <h2>Choose Your Element</h2>
+                <h2 id="element-picker-title">Choose Your Element</h2>
                 <div id="element-grid" class="element-grid"></div>
                 <button class="menu-btn btn-back" id="btn-picker-back">Back</button>
             </div>
         </div>
 
         <!-- Weapon Picker -->
-        <div id="weapon-picker" class="picker-overlay hidden">
+        <div
+            id="weapon-picker"
+            class="picker-overlay hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="weapon-picker-title"
+            aria-describedby="picker-navigation-help"
+            aria-hidden="true"
+        >
             <div class="picker-content">
-                <h2>Choose Your Weapon</h2>
+                <h2 id="weapon-picker-title">Choose Your Weapon</h2>
                 <div id="weapon-grid" class="weapon-grid"></div>
                 <button class="menu-btn btn-back" id="btn-weapon-back">Back</button>
             </div>
         </div>
 
         <!-- Level Select -->
-        <div id="level-select" class="picker-overlay hidden">
+        <div
+            id="level-select"
+            class="picker-overlay hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="level-select-title"
+            aria-describedby="picker-navigation-help"
+            aria-hidden="true"
+        >
             <div class="picker-content">
-                <h2>Adventure Mode</h2>
+                <h2 id="level-select-title">Adventure Mode</h2>
                 <div id="level-grid" class="level-grid"></div>
                 <button class="menu-btn btn-back" id="btn-level-back">Back</button>
             </div>
@@ -140,6 +175,9 @@
                 <button class="tool-btn preset-btn" data-preset="4" title="Random Army">
                     Random
                 </button>
+                <button class="tool-btn preset-btn" data-preset="5" title="Fort Siege">
+                    Siege
+                </button>
             </div>
             <div class="toolbar-section">
                 <span class="toolbar-label">Element</span>
@@ -169,10 +207,18 @@
         </div>
 
         <!-- Pause Overlay -->
-        <div id="pause-overlay" class="menu-overlay hidden" aria-hidden="true">
+        <div
+            id="pause-overlay"
+            class="menu-overlay hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pause-title"
+            aria-describedby="pause-instructions"
+            aria-hidden="true"
+        >
             <div class="menu-content">
-                <h2>Paused</h2>
-                <p>Press Esc or P to resume</p>
+                <h2 id="pause-title">Paused</h2>
+                <p id="pause-instructions">Press Esc or P to resume</p>
             </div>
         </div>
 
@@ -180,7 +226,15 @@
         <div id="upgrade-panel" class="upgrade-panel hidden"></div>
 
         <!-- Game Over / Level Complete -->
-        <div id="game-over-screen" class="menu-overlay hidden">
+        <div
+            id="game-over-screen"
+            class="menu-overlay hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="game-over-title"
+            aria-describedby="game-over-text"
+            aria-hidden="true"
+        >
             <div class="menu-content">
                 <h2 id="game-over-title">Game Over</h2>
                 <p id="game-over-text"></p>
