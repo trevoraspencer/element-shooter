@@ -1460,14 +1460,15 @@ class AdventureMode {
         }
 
         // Check if wave is clear
+        let shouldCompleteLevel = false;
         if (this.waveActive) {
             const enemies = this.entities.filter((e) => e.team === 'b' && e.alive);
             if (enemies.length === 0) {
                 this.waveActive = false;
 
                 if (this.bossSpawned) {
-                    // Boss killed - level complete!
-                    this.completeLevel();
+                    // Settle the boss reward and any same-frame player death first.
+                    shouldCompleteLevel = true;
                 } else {
                     // Regular wave cleared - show upgrade panel
                     if (player.entity && player.entity.alive && !this.gameOverTriggered) {
@@ -1512,6 +1513,21 @@ class AdventureMode {
             }
         }
 
+        // Player death takes precedence over a same-frame boss kill.
+        if (
+            player.entity &&
+            !player.entity.alive &&
+            !this.levelComplete &&
+            !this.gameOverTriggered
+        ) {
+            this.gameOverTriggered = true;
+            this.gameOver();
+        }
+
+        if (shouldCompleteLevel && !this.gameOverTriggered) {
+            this.completeLevel();
+        }
+
         this.projectiles = this.projectiles.filter((p) => p.alive);
 
         // Update health pickups
@@ -1548,17 +1564,6 @@ class AdventureMode {
                     this.pickups.splice(i, 1);
                 }
             }
-        }
-
-        // Player death (only trigger once)
-        if (
-            player.entity &&
-            !player.entity.alive &&
-            !this.levelComplete &&
-            !this.gameOverTriggered
-        ) {
-            this.gameOverTriggered = true;
-            this.gameOver();
         }
 
         this.updateHUD();
