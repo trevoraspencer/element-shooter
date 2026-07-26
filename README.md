@@ -6,9 +6,9 @@ A 2D physics sandbox and arena shooter built around the periodic table. Vanilla 
 
 - 46 playable elements with stats derived from real chemistry — light elements are fast and fragile, heavy ones are slow and tanky
 - 6 weapons (photon blaster, shotgun, cannon, beam, fusion, gravity well)
-- 14 element specials: aura damage, projectile reflect, chain lightning, explosive death, magnetic pull, status effects, and more
+- Element specials: aura damage, projectile reflect, chain lightning, explosive death, magnetic pull, status effects, and more
 - Element effectiveness matrix — burn vs. freeze, corrosive vs. armor, electric vs. shield, etc.
-- **Sandbox mode**: free spawning, team battles (A/B/Neutral), drag, explode, freeze, gravity flip, slow-mo, and placeable destructible structures. 50-entity cap. Battle presets for instant chaos (Tiny H vs Giant Pu, Magnet War, Noble Gas Escape, Boss Rush, Random Army, Fort Siege).
+- **Sandbox mode**: free spawning, team battles (A/B/Neutral), drag, explode, freeze, gravity flip, slow-mo, and placeable destructible structures. 50-entity and 30-structure caps. Battle presets for instant chaos (Tiny H vs Giant Pu, Magnet War, Noble Gas Escape, Boss Rush, Random Army, Fort Siege).
 - **Adventure mode**: 7 hand-built levels with 4 enemy waves + a boss each, weapon rewards on completion, progress saved to `localStorage`, and per-level best score/time/mastery records for replay goals. Upgrade choices between waves — pick from 7 roguelike upgrades (max health, speed, jump, fire rate, damage, regen, special cooldown). Boss phase transitions at 50% health with unique effects (minion spawns, magnetic pull, decoy clones, radioactive zones, shields, speed bursts).
 - AI state machine with four behavior presets (aggressive, defensive, wanderer, berserker)
 - Synthesized audio via Web Audio API — no audio files in the repo
@@ -48,7 +48,7 @@ Sandbox tools (spawn, drag, delete, explode, freeze, gravity flip, slow-mo, clea
 
 Targets evergreen browsers (Chrome, Firefox, Safari, Edge — last two major versions). Uses:
 
-- ES2017+ syntax (classes, arrow functions, template literals)
+- ES2020+ syntax (classes, optional chaining, nullish coalescing)
 - Canvas 2D
 - Web Audio API
 - `requestAnimationFrame` and `localStorage`
@@ -94,18 +94,18 @@ This installs dev-only dependencies (ESLint, Prettier, Vitest, Husky, lint-stage
 | -------------------------- | ------------------------------------------------ |
 | `npm run lint`             | Check code quality with ESLint                   |
 | `npm run lint:fix`         | Auto-fix lint issues                             |
-| `npm run format`           | Format JS, CSS, and HTML files with Prettier     |
-| `npm run format:check`     | Verify all files are formatted (no changes)      |
+| `npm run format`           | Format supported source, config, and docs files  |
+| `npm run format:check`     | Verify supported files are formatted             |
 | `npm test`                 | Run unit tests with Vitest                       |
-| `npm run check:dead-code`  | Detect unused exports and dependencies with knip |
-| `npm run check:complexity` | Report cyclomatic complexity metrics             |
+| `npm run check:dead-code`  | Reject unused exports and dependencies with knip |
+| `npm run check:complexity` | Enforce the cyclomatic complexity threshold      |
 
 ### Pre-commit hooks
 
 [Husky](https://typicode.github.io/husky/) + [lint-staged](https://github.com/lint-staged/lint-staged) run automatically on every commit:
 
 - **`*.js` files** — ESLint fix + Prettier write
-- **`*.{css,html,md}` files** — Prettier write
+- **`*.{css,html,md,json,yml,yaml}` files** — Prettier write
 
 ### Testing
 
@@ -114,9 +114,14 @@ Tests live in `__tests__/` and use [Vitest](https://vitest.dev/). Coverage inclu
 - **`utils.test.js`** — math helpers, color helpers, collision categories, configuration constants, settings functions
 - **`elements-data.test.js`** — element definitions, sorting, special configs, effectiveness multipliers, damage resolution, level unlocks, status effects
 - **`boss-phases.test.js`** — per-level boss phase config data and phase-op handler behavior (minion spawns, buffs, danger zones, effects)
+- **Adventure tests** — progress migration, records, platform geometry, outcome ordering, and simulation-time timers
+- **`effects.test.js`** — combat text and frame-rate-independent particle integration
 - **`index-contract.test.js`** — `index.html` script order, CDN/SRI contract, local JS coverage, duplicate top-level declarations, and ordered source loading
+- **`main.test.js`** — collision dispatch, spent-projectile handling, and body-slam combat context
+- **`sandbox-presets.test.js`** — preset layout and cleanup behavior
 - **`sandbox-walls.test.js`** — sandbox boundary-wall placement at the visible window edges across zoom and window sizes
 - **`structures.test.js`** — structure prefab table, part layout, damage/destruction, and radius damage to structures
+- **`ui-navigation.test.js`** — keyboard grid navigation
 
 ```bash
 npm test              # run all tests once

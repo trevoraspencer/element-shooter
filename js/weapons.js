@@ -181,91 +181,98 @@ class Projectile {
     onHit(entity, entities, effects) {
         if (!this.alive) return;
         if (entity === this.shooter) return;
-        if (entity && entity.team === this.team && this.team !== 'neutral') return;
+        if (entity && !areTeamsHostile(this.team, entity.team)) return;
 
-        if (entity && entity.alive) {
-            resolveElementDamage(entity, this.wpn.damage, effects, this.shooter, entities, {
-                attackerSpecial: this.shooter?.data?.special || 'none',
-            });
+        if (entity?.alive && this.hitEntity(entity, entities, effects)) return;
 
-            // Knockback
-            const ang = angle(0, 0, this.body.velocity.x, this.body.velocity.y);
-            const force = this.wpn.knockback * 0.005 * entity.body.mass;
-            Matter.Body.applyForce(entity.body, entity.body.position, {
-                x: Math.cos(ang) * force,
-                y: Math.sin(ang) * force,
-            });
-
-            // Reflect special
-            const reflectChance = entity.special.reflectChance || 0;
-            if (reflectChance && Math.random() < reflectChance) {
-                // Reflect projectile back
-                Matter.Body.setVelocity(this.body, {
-                    x: -this.body.velocity.x,
-                    y: -this.body.velocity.y,
-                });
-                this.team = entity.team;
-                this.shooter = entity;
-                // Re-anchor sweep origin so next frame's swept-collision
-                // doesn't re-hit the reflector or chain through it.
-                this.prevPosition = { x: this.body.position.x, y: this.body.position.y };
-                if (effects)
-                    effects.sparks(this.body.position.x, this.body.position.y, '#ffffff', 12);
-                return; // Don't destroy
-            }
-        }
-
-        // Explosive projectiles
-        if (this.wpn.explosive && effects) {
-            const pos = this.body.position;
-            effects.explosion(pos.x, pos.y, this.wpn.projectileColor, 25, 350);
-            playSound('explode');
-            triggerScreenShake(SCREEN_SHAKE_CONFIG.explosion);
-
-            // AoE damage
-            if (entities) {
-                const r2 = this.wpn.explosionRadius * this.wpn.explosionRadius;
-                for (const ent of entities) {
-                    if (!ent.alive || ent === this.shooter) continue;
-                    if (ent.team === this.team && this.team !== 'neutral') continue;
-                    const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
-                    if (d2 < r2) {
-                        const falloff = 1 - Math.sqrt(d2) / this.wpn.explosionRadius;
-                        resolveElementDamage(
-                            ent,
-                            this.wpn.damage * falloff * 0.6,
-                            effects,
-                            this.shooter,
-                            entities,
-                            {
-                                attackerSpecial: this.shooter?.data?.special || 'none',
-                            },
-                        );
-                        const a = angle(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
-                        const f = this.wpn.knockback * 0.01 * falloff * ent.body.mass;
-                        Matter.Body.applyForce(ent.body, ent.body.position, {
-                            x: Math.cos(a) * f,
-                            y: Math.sin(a) * f,
-                        });
-                    }
-                }
-            }
-
-            // Structures take splash damage too (sandbox creator mode).
-            damageStructuresInRadius(
-                activeSandboxStructures(),
-                pos.x,
-                pos.y,
-                this.wpn.explosionRadius,
-                this.wpn.damage * 0.6,
-                effects,
-                this.engine.world,
-            );
-        } else if (effects) {
-            effects.sparks(this.body.position.x, this.body.position.y, this.wpn.projectileColor);
-        }
-
+        this.resolveImpact(entities, effects);
         this.destroy();
+    }
+
+    hitEntity(entity, entities, effects) {
+        resolveElementDamage(entity, this.wpn.damage, effects, this.shooter, entities, {
+            attackerSpecial: this.shooter?.data?.special || 'none',
+        });
+
+        const ang = angle(0, 0, this.body.velocity.x, this.body.velocity.y);
+        const force = this.wpn.knockback * 0.005 * entity.body.mass;
+        Matter.Body.applyForce(entity.body, entity.body.position, {
+            x: Math.cos(ang) * force,
+            y: Math.sin(ang) * force,
+        });
+
+        return this.tryReflect(entity, effects);
+    }
+
+    tryReflect(entity, effects) {
+        const reflectChance = entity.special.reflectChance || 0;
+        if (!reflectChance || Math.random() >= reflectChance) return false;
+
+        Matter.Body.setVelocity(this.body, {
+            x: -this.body.velocity.x,
+            y: -this.body.velocity.y,
+        });
+        this.team = entity.team;
+        this.shooter = entity;
+        // Re-anchor the sweep so the next frame does not re-hit the reflector.
+        this.prevPosition = { x: this.body.position.x, y: this.body.position.y };
+        effects?.sparks(this.body.position.x, this.body.position.y, '#ffffff', 12);
+        return true;
+    }
+
+    resolveImpact(entities, effects) {
+        if (this.wpn.explosive && effects) {
+            this.explode(entities, effects);
+        } else {
+            effects?.sparks(this.body.position.x, this.body.position.y, this.wpn.projectileColor);
+        }
+    }
+
+    explode(entities, effects) {
+        const pos = this.body.position;
+        effects.explosion(pos.x, pos.y, this.wpn.projectileColor, 25, 350);
+        playSound('explode');
+        triggerScreenShake(SCREEN_SHAKE_CONFIG.explosion);
+
+        this.damageEntitiesInExplosion(entities, effects, pos);
+        damageStructuresInRadius(
+            activeSandboxStructures(),
+            pos.x,
+            pos.y,
+            this.wpn.explosionRadius,
+            this.wpn.damage * 0.6,
+            effects,
+            this.engine.world,
+        );
+    }
+
+    damageEntitiesInExplosion(entities, effects, pos) {
+        if (!entities) return;
+        const r2 = this.wpn.explosionRadius * this.wpn.explosionRadius;
+        for (const ent of entities) {
+            if (!ent.alive || ent === this.shooter) continue;
+            if (!areTeamsHostile(this.team, ent.team)) continue;
+            const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
+            if (d2 >= r2) continue;
+
+            const falloff = 1 - Math.sqrt(d2) / this.wpn.explosionRadius;
+            resolveElementDamage(
+                ent,
+                this.wpn.damage * falloff * 0.6,
+                effects,
+                this.shooter,
+                entities,
+                {
+                    attackerSpecial: this.shooter?.data?.special || 'none',
+                },
+            );
+            const a = angle(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
+            const force = this.wpn.knockback * 0.01 * falloff * ent.body.mass;
+            Matter.Body.applyForce(ent.body, ent.body.position, {
+                x: Math.cos(a) * force,
+                y: Math.sin(a) * force,
+            });
+        }
     }
 
     render(ctx, camera) {
@@ -302,7 +309,7 @@ function checkProjectileSweep(projectile, entities, effects) {
     const to = projectile.body.position;
     for (const ent of entities) {
         if (!ent.alive || ent === projectile.shooter) continue;
-        if (ent.team === projectile.team && projectile.team !== 'neutral') continue;
+        if (!areTeamsHostile(projectile.team, ent.team)) continue;
         const radius = ent.data.radius + projectile.wpn.projectileRadius;
         if (distanceToSegment(ent.body.position, from, to) <= radius) {
             projectile.onHit(ent, entities, effects);

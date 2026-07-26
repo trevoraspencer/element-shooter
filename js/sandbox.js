@@ -202,6 +202,7 @@ class SandboxMode {
 
         // Structures (creator mode)
         this.structures = [];
+        this.maxStructures = 30;
         this.selectedStructure = 'house';
         this.placeGhost = null;
         // Tracks live structure part bodies so update() can detect when combat
@@ -226,6 +227,8 @@ class SandboxMode {
         this.projectiles = [];
         this.slowMo = false;
         this.gravityFlipped = false;
+        document.querySelector('[data-tool="slowmo"]')?.classList.remove('active');
+        document.querySelector('[data-tool="gravity"]')?.classList.remove('active');
 
         // Reset gravity
         this.game.engine.gravity.y = 1;
@@ -589,7 +592,7 @@ class SandboxMode {
     }
 
     addStructure(prefabKey, x, groundY = SANDBOX_FLOOR_TOP) {
-        if (!STRUCTURES[prefabKey]) return null;
+        if (!STRUCTURES[prefabKey] || this.structures.length >= this.maxStructures) return null;
 
         const structure = new Structure(prefabKey, x, groundY);
         structure.addToWorld(this.game.engine.world);
@@ -652,7 +655,7 @@ class SandboxMode {
             const d = dist(x, y, ent.body.position.x, ent.body.position.y);
             if (d < 150) {
                 const falloff = 1 - d / 150;
-                ent.takeDamage(40 * falloff, this.game.effects);
+                ent.takeDamage(40 * falloff, this.game.effects, null, this.entities);
                 const a = angle(x, y, ent.body.position.x, ent.body.position.y);
                 const force = 0.08 * falloff * ent.body.mass;
                 Matter.Body.applyForce(ent.body, ent.body.position, {
@@ -726,6 +729,10 @@ class SandboxMode {
     }
 
     clearAll() {
+        // A constraint retains its body reference even after that body is removed.
+        // Drop it first so clearing while dragging cannot leave stale physics state.
+        this.endDrag();
+
         for (const ent of this.entities) {
             ent.destroy();
         }

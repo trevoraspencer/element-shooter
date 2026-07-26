@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { loadSource } from './helpers/load-source.js';
 
 let sandbox;
@@ -116,5 +116,23 @@ describe('getPresetStructurePlacements', () => {
         );
 
         expect(placements).toEqual([{ prefab: 'tower', x: 1000, groundY: SANDBOX_FLOOR_TOP }]);
+    });
+});
+
+describe('SandboxMode cleanup', () => {
+    it('ends an active drag before removing bodies', () => {
+        const context = {
+            endDrag: vi.fn(),
+            entities: [],
+            projectiles: [],
+            structures: [],
+            game: { engine: { world: {} } },
+            rebuildStaticBodies: vi.fn(),
+            updateEntityCount: vi.fn(),
+        };
+
+        sandbox.SandboxMode.prototype.clearAll.call(context);
+
+        expect(context.endDrag).toHaveBeenCalledOnce();
     });
 });

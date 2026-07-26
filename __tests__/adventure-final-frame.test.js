@@ -37,7 +37,7 @@ function makeFinalFrame({ playerAlive }) {
         update: vi.fn(),
     };
 
-    const mode = {
+    const mode = Object.assign(Object.create(AdventureMode.prototype), {
         active: true,
         bossEntity: boss,
         bossPhaseTriggered: false,
@@ -70,9 +70,10 @@ function makeFinalFrame({ playerAlive }) {
         spawnWave: vi.fn(),
         state: 'playing',
         updateHUD: vi.fn(),
+        updateSimulationTimers: vi.fn(),
         waveActive: true,
         waveTimer: 0,
-    };
+    });
 
     return { boss, mode, player };
 }

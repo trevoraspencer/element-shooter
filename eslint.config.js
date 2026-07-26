@@ -30,9 +30,9 @@ export default [
             // are resolved at runtime, so no-undef is not useful here.
             'no-undef': 'off',
 
-            // Top-level declarations are "exports" consumed by other scripts;
-            // warn-only keeps the signal without breaking the build.
-            'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+            // Top-level declarations are globals consumed by later scripts.
+            // Continue checking function-local variables and arguments.
+            'no-unused-vars': ['warn', { vars: 'local', argsIgnorePattern: '^_' }],
             'no-console': 'off',
 
             // --- Naming conventions ---
@@ -56,10 +56,6 @@ export default [
                     cases: { kebabCase: true },
                 },
             ],
-
-            // --- Complexity analysis ---
-            // Warn when cyclomatic complexity exceeds 20
-            complexity: ['warn', { max: 20 }],
         },
     },
 

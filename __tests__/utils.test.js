@@ -152,6 +152,49 @@ describe('angle', () => {
     });
 });
 
+describe('areTeamsHostile', () => {
+    it('treats matching named teams as allies', () => {
+        expect(utils.areTeamsHostile('a', 'a')).toBe(false);
+        expect(utils.areTeamsHostile('b', 'b')).toBe(false);
+    });
+
+    it('treats neutral actors as independent and hostile', () => {
+        expect(utils.areTeamsHostile('neutral', 'neutral')).toBe(true);
+        expect(utils.areTeamsHostile('neutral', 'a')).toBe(true);
+    });
+});
+
+describe('runSimulationSteps', () => {
+    it('preserves a low-frame-rate delta using bounded physics steps', () => {
+        const steps = [];
+
+        const advanced = utils.runSimulationSteps(1 / 30, (step) => {
+            steps.push(step);
+        });
+
+        expect(steps).toHaveLength(2);
+        expect(Math.max(...steps)).toBeLessThanOrEqual(utils.SIMULATION_TIMING.maxStep);
+        expect(advanced).toBeCloseTo(1 / 30);
+    });
+
+    it('caps long stalls and can stop when simulation becomes paused', () => {
+        const cappedSteps = [];
+        expect(
+            utils.runSimulationSteps(10, (step) => {
+                cappedSteps.push(step);
+            }),
+        ).toBeCloseTo(utils.SIMULATION_TIMING.maxFrameDelta);
+
+        let calls = 0;
+        const advanced = utils.runSimulationSteps(1 / 30, () => {
+            calls++;
+            return calls === 1 ? undefined : false;
+        });
+        expect(calls).toBe(2);
+        expect(advanced).toBeCloseTo(utils.SIMULATION_TIMING.maxStep);
+    });
+});
+
 // ─── Color helpers ─────────────────────────────────────────────────────
 
 describe('hexToRgb', () => {

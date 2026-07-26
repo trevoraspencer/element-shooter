@@ -22,10 +22,10 @@ class EffectsSystem {
             const p = this.particles[i];
             p.x += p.vx * dt;
             p.y += p.vy * dt;
-            p.vy += (p.gravity || 200) * dt;
+            p.vy += (p.gravity ?? 200) * dt;
             p.life -= dt;
             p.alpha = Math.max(0, p.life / p.maxLife);
-            p.size *= p.shrink || 0.98;
+            p.size *= Math.pow(p.shrink ?? 0.98, dt / SIMULATION_TIMING.maxStep);
             if (p.life <= 0) this.particles.splice(i, 1);
         }
 

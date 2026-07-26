@@ -1,4 +1,6 @@
 // Main game entry point
+const PROJECTILE_SURFACE_LABELS = new Set(['ground', 'wall', 'platform']);
+
 class Game {
     constructor() {
         // Canvas
@@ -68,43 +70,35 @@ class Game {
     setupCollisions() {
         Matter.Events.on(this.engine, 'collisionStart', (event) => {
             for (const pair of event.pairs) {
-                const a = pair.bodyA;
-                const b = pair.bodyB;
-
-                // Projectile hit entity
-                if (a.label === 'projectile' && b.label === 'element') {
-                    this.handleProjectileHit(a.projectile, b.entity);
-                } else if (b.label === 'projectile' && a.label === 'element') {
-                    this.handleProjectileHit(b.projectile, a.entity);
-                }
-
-                // Projectile hit ground/wall/platform
-                if (
-                    a.label === 'projectile' &&
-                    (b.label === 'ground' || b.label === 'wall' || b.label === 'platform')
-                ) {
-                    if (a.projectile) a.projectile.onHit(null, this.getAllEntities(), this.effects);
-                } else if (
-                    b.label === 'projectile' &&
-                    (a.label === 'ground' || a.label === 'wall' || a.label === 'platform')
-                ) {
-                    if (b.projectile) b.projectile.onHit(null, this.getAllEntities(), this.effects);
-                }
-
-                // Projectile hit a structure part — damage it, then resolve the
-                // projectile against it as it would any wall.
-                if (a.label === 'projectile' && b.label === 'structure') {
-                    this.handleStructureHit(a.projectile, b);
-                } else if (b.label === 'projectile' && a.label === 'structure') {
-                    this.handleStructureHit(b.projectile, a);
-                }
-
-                // Body slam (element vs element)
-                if (a.label === 'element' && b.label === 'element') {
-                    this.handleBodySlam(a.entity, b.entity);
-                }
+                this.handleCollisionPair(pair.bodyA, pair.bodyB);
             }
         });
+    }
+
+    handleCollisionPair(a, b) {
+        this.handleProjectilePair(a, b, 'element', (projectile, body) => {
+            this.handleProjectileHit(projectile, body.entity);
+        });
+        this.handleProjectilePair(a, b, PROJECTILE_SURFACE_LABELS, (projectile) => {
+            projectile?.onHit(null, this.getAllEntities(), this.effects);
+        });
+        this.handleProjectilePair(a, b, 'structure', (projectile, body) => {
+            this.handleStructureHit(projectile, body);
+        });
+
+        if (a.label === 'element' && b.label === 'element') {
+            this.handleBodySlam(a.entity, b.entity);
+        }
+    }
+
+    handleProjectilePair(a, b, targetLabels, onHit) {
+        const matches = (label) =>
+            targetLabels instanceof Set ? targetLabels.has(label) : label === targetLabels;
+        if (a.label === 'projectile' && matches(b.label)) {
+            onHit(a.projectile, b);
+        } else if (b.label === 'projectile' && matches(a.label)) {
+            onHit(b.projectile, a);
+        }
     }
 
     handleProjectileHit(projectile, entity) {
@@ -113,7 +107,7 @@ class Game {
     }
 
     handleStructureHit(projectile, body) {
-        if (!projectile || !body || !body.structure) return;
+        if (!projectile?.alive || !body || !body.structure) return;
         body.structure.damagePart(
             body.structurePart,
             projectile.wpn.damage,
@@ -125,7 +119,7 @@ class Game {
 
     handleBodySlam(entA, entB) {
         if (!entA || !entB || !entA.alive || !entB.alive) return;
-        if (entA.team === entB.team && entA.team !== 'neutral') return;
+        if (!areTeamsHostile(entA.team, entB.team)) return;
 
         // Calculate collision speed
         const relVel = {
@@ -146,8 +140,13 @@ class Game {
             const dmgA = entB.data.damage * speedScale * (entB.data.mass / entA.data.mass);
             const dmgB = entA.data.damage * speedScale * (entA.data.mass / entB.data.mass);
 
-            if (dmgA > BODY_SLAM_CONFIG.minDamage) entA.takeDamage(dmgA, this.effects);
-            if (dmgB > BODY_SLAM_CONFIG.minDamage) entB.takeDamage(dmgB, this.effects);
+            const entities = this.getAllEntities();
+            if (dmgA > BODY_SLAM_CONFIG.minDamage) {
+                entA.takeDamage(dmgA, this.effects, null, entities);
+            }
+            if (dmgB > BODY_SLAM_CONFIG.minDamage) {
+                entB.takeDamage(dmgB, this.effects, null, entities);
+            }
         }
     }
 
@@ -199,42 +198,43 @@ class Game {
         // First tick (or tab just became visible) — anchor and skip update.
         if (this.lastTime === null) {
             this.lastTime = time;
-            this.render(0);
+            this.render();
             return;
         }
 
-        // Delta time
-        let dt = (time - this.lastTime) / 1000;
+        // Preserve elapsed time while bounding individual physics steps. This
+        // keeps gameplay speed stable below 60 fps without feeding Matter.js an
+        // oversized delta after a stall.
+        const frameDt = clamp((time - this.lastTime) / 1000, 0, SIMULATION_TIMING.maxFrameDelta);
         this.lastTime = time;
 
-        // Clamp dt to Matter.js' recommended max step.
-        if (dt > 1 / 60) dt = 1 / 60;
-        dt *= this.timeScale;
+        const advanced = runSimulationSteps(frameDt * this.timeScale, (dt) => {
+            const simulationPaused =
+                this.mode === 'adventure' && this.adventure.isSimulationPaused();
+            if (simulationPaused) return false;
 
-        const simulationPaused = this.mode === 'adventure' && this.adventure.isSimulationPaused();
-        if (!simulationPaused) {
             for (const projectile of this.getAllProjectiles()) {
                 projectile.capturePreviousPosition();
             }
             Matter.Engine.update(this.engine, dt * 1000);
-        }
 
-        // Update
-        if (this.mode === 'sandbox') {
-            this.sandbox.update(dt);
-        } else if (this.mode === 'adventure' && !simulationPaused) {
-            this.adventure.update(dt);
-        }
+            if (this.mode === 'sandbox') {
+                this.sandbox.update(dt);
+            } else if (this.mode === 'adventure') {
+                this.adventure.update(dt);
+            }
+        });
 
-        // Effects
-        this.effects.update(dt);
-        updateScreenShake();
+        if (advanced > 0) {
+            this.effects.update(advanced);
+            updateScreenShake(advanced);
+        }
 
         // Render
-        this.render(dt);
+        this.render();
     }
 
-    render(dt) {
+    render() {
         const ctx = this.ctx;
         const cam = this.camera;
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);

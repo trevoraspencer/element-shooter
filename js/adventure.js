@@ -512,6 +512,7 @@ const PICKUP_CONFIG = {
 };
 const MASTERY_HEALTH_GOAL = 0.6;
 const MASTERY_LABELS = ['Uncleared', 'Bronze', 'Silver', 'Gold'];
+const ADVENTURE_PLATFORM_HEIGHT = 20;
 const LEVEL_MASTERY_GOALS = [
     { parTime: 165 },
     { parTime: 210 },
@@ -521,6 +522,17 @@ const LEVEL_MASTERY_GOALS = [
     { parTime: 255 },
     { parTime: 285 },
 ];
+
+function getAdventurePlatformGeometry(platform) {
+    return {
+        left: platform.x,
+        top: platform.y,
+        width: platform.w,
+        height: ADVENTURE_PLATFORM_HEIGHT,
+        centerX: platform.x + platform.w / 2,
+        centerY: platform.y + ADVENTURE_PLATFORM_HEIGHT / 2,
+    };
+}
 
 function toFiniteNumber(value, fallback) {
     const num = Number(value);
@@ -721,20 +733,20 @@ const PHASE_OPS = {
         this.bossEntity.addStatus(op.status, op.duration);
     },
 
-    // Temporarily multiply boss speed + fire rate, restoring after op.duration.
-    // Cancellation is handled by setManagedTimeout/clearTimers via this.timers.
+    // Temporarily multiply boss speed + fire rate, restoring after op.duration
+    // of simulation time so pausing cannot consume the buff.
     statBuff(op) {
         const boss = this.bossEntity;
         const origSpeed = boss.data.speed;
         const origFireRate = boss.fireRateMultiplier || 1;
         boss.data = { ...boss.data, speed: boss.data.speed * op.speedMult };
         boss.fireRateMultiplier = origFireRate * op.fireRateMult;
-        this.setManagedTimeout(() => {
+        this.setSimulationTimeout(() => {
             if (boss.alive && boss.data) {
                 boss.data = { ...boss.data, speed: origSpeed };
                 boss.fireRateMultiplier = origFireRate;
             }
-        }, op.duration * 1000);
+        }, op.duration);
     },
 
     // Visual/audio flourish at the boss position. color: 'boss' = boss's own color.
@@ -786,6 +798,7 @@ class AdventureMode {
         );
 
         this.timers = [];
+        this.simulationTimers = [];
         this.unlockedLevels = [...DEFAULT_UNLOCKED_LEVELS];
         this.unlockedElements = new Set(STARTER_ELEMENTS);
         this.levelRecords = createDefaultLevelRecords();
@@ -905,14 +918,18 @@ class AdventureMode {
                       (fallback, index) => data.levels[index] ?? fallback,
                   )
                 : [...DEFAULT_UNLOCKED_LEVELS];
-        const elements =
+        levels[0] = true;
+
+        const savedElements =
             Array.isArray(data.elements) && data.elements.every((key) => ELEMENTS[key])
                 ? data.elements
-                : STARTER_ELEMENTS;
-        const weapons =
+                : [];
+        const elements = [...new Set([...STARTER_ELEMENTS, ...savedElements])];
+        const savedWeapons =
             Array.isArray(data.weapons) && data.weapons.every((key) => WEAPONS[key])
                 ? data.weapons
-                : STARTER_WEAPONS;
+                : [];
+        const weapons = [...new Set([...STARTER_WEAPONS, ...savedWeapons])];
         const records = normalizeLevelRecords(data.records);
 
         return { levels, elements, weapons, records };
@@ -969,8 +986,23 @@ class AdventureMode {
         this.timers = [];
     }
 
+    setSimulationTimeout(fn, delay) {
+        this.simulationTimers.push({ fn, remaining: Math.max(0, delay) });
+    }
+
+    updateSimulationTimers(dt) {
+        for (let i = this.simulationTimers.length - 1; i >= 0; i--) {
+            const timer = this.simulationTimers[i];
+            timer.remaining -= dt;
+            if (timer.remaining > 0) continue;
+            this.simulationTimers.splice(i, 1);
+            timer.fn();
+        }
+    }
+
     startLevel(levelIndex) {
         this.clearTimers();
+        this.simulationTimers = [];
         this.active = true;
         this.currentLevel = levelIndex;
         this.level = LEVELS[levelIndex];
@@ -1070,14 +1102,21 @@ class AdventureMode {
 
         // Platforms
         for (const p of this.level.platforms) {
-            const plat = Bodies.rectangle(p.x + p.w / 2, p.y, p.w, 20, {
-                isStatic: true,
-                collisionFilter: {
-                    category: CAT.PLATFORM,
-                    mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+            const geometry = getAdventurePlatformGeometry(p);
+            const plat = Bodies.rectangle(
+                geometry.centerX,
+                geometry.centerY,
+                geometry.width,
+                geometry.height,
+                {
+                    isStatic: true,
+                    collisionFilter: {
+                        category: CAT.PLATFORM,
+                        mask: CAT.ELEMENT | CAT.PLAYER | CAT.PROJECTILE,
+                    },
+                    label: 'platform',
                 },
-                label: 'platform',
-            });
+            );
             this.staticBodies.push(plat);
         }
 
@@ -1198,6 +1237,7 @@ class AdventureMode {
 
         const panel = document.getElementById('upgrade-panel');
         panel.classList.remove('hidden');
+        panel.setAttribute('aria-hidden', 'false');
         panel.innerHTML = '';
 
         const content = document.createElement('div');
@@ -1258,13 +1298,14 @@ class AdventureMode {
 
         content.appendChild(cards);
         panel.appendChild(content);
+        cards.firstElementChild?.focus();
 
         // Prevent clicks on panel background from doing anything
-        panel.addEventListener('click', (e) => {
+        panel.onclick = (e) => {
             if (e.target === panel) {
                 e.stopPropagation();
             }
-        });
+        };
     }
 
     selectUpgrade(idx) {
@@ -1295,6 +1336,7 @@ class AdventureMode {
         const panel = document.getElementById('upgrade-panel');
         if (panel) {
             panel.classList.add('hidden');
+            panel.setAttribute('aria-hidden', 'true');
             panel.innerHTML = '';
         }
         this.currentUpgradeChoices = [];
@@ -1341,10 +1383,26 @@ class AdventureMode {
         if (!this.active) return;
         if (this.isSimulationPaused()) return;
         if (this.state === 'playing') this.levelElapsed += dt;
+        this.updateSimulationTimers(dt);
 
         const player = this.game.player;
+        this.updatePlayer(dt, player);
+        this.updateEntities(dt);
+        this.updateProjectiles(dt);
+        this.updateBossPhase();
+        this.updateDangerZones(dt);
+        this.updateWaveTimer(dt);
 
-        // Update player
+        const shouldCompleteLevel = this.settleWave(player);
+        this.removeDeadEnemies(player);
+        this.settleOutcome(player, shouldCompleteLevel);
+
+        this.projectiles = this.projectiles.filter((p) => p.alive);
+        this.updatePickups(dt, player);
+        this.updateHUD();
+    }
+
+    updatePlayer(dt, player) {
         const projCountBefore = this.projectiles.length;
         player.update(
             dt,
@@ -1355,7 +1413,6 @@ class AdventureMode {
             this.entities,
         );
 
-        // Apply projectile damage multiplier to new player projectiles
         if (player.entity && player.entity.damageMultiplier) {
             for (let i = projCountBefore; i < this.projectiles.length; i++) {
                 const proj = this.projectiles[i];
@@ -1368,7 +1425,6 @@ class AdventureMode {
             }
         }
 
-        // Health regen from shield/regen upgrade
         if (player.entity && player.entity.alive && player.entity.regenRate) {
             player.entity.health = Math.min(
                 player.entity.maxHealth,
@@ -1376,12 +1432,12 @@ class AdventureMode {
             );
         }
 
-        // Camera follows player
         if (player.entity && player.entity.alive) {
             this.game.camera.follow(player.entity.body.position, dt);
         }
+    }
 
-        // Update entities
+    updateEntities(dt) {
         for (const ent of this.entities) {
             ent.update(dt, this.entities, this.game.effects);
 
@@ -1405,14 +1461,16 @@ class AdventureMode {
                 ent.stuckTimer = 0;
             }
         }
+    }
 
-        // Update projectiles
+    updateProjectiles(dt) {
         for (const proj of this.projectiles) {
             proj.update(dt, this.game.effects);
             checkProjectileSweep(proj, this.entities, this.game.effects);
         }
+    }
 
-        // Boss phase trigger check
+    updateBossPhase() {
         if (this.bossEntity && this.bossEntity.alive && !this.bossPhaseTriggered) {
             const healthPct = this.bossEntity.health / this.bossEntity.maxHealth;
             if (healthPct <= 0.5) {
@@ -1420,8 +1478,9 @@ class AdventureMode {
                 this.triggerBossPhase();
             }
         }
+    }
 
-        // Update danger zones (Uranium Emperor phase effect)
+    updateDangerZones(dt) {
         for (let i = this.dangerZones.length - 1; i >= 0; i--) {
             const zone = this.dangerZones[i];
             zone.age += dt;
@@ -1450,70 +1509,73 @@ class AdventureMode {
                 }
             }
         }
+    }
 
-        // Wave management
+    updateWaveTimer(dt) {
         if (!this.waveActive && !this.levelComplete) {
             this.waveTimer -= dt;
             if (this.waveTimer <= 0) {
                 this.spawnWave();
             }
         }
+    }
 
-        // Check if wave is clear
-        let shouldCompleteLevel = false;
-        if (this.waveActive) {
-            const enemies = this.entities.filter((e) => e.team === 'b' && e.alive);
-            if (enemies.length === 0) {
-                this.waveActive = false;
+    settleWave(player) {
+        if (!this.waveActive) return false;
+        const hasEnemies = this.entities.some((e) => e.team === 'b' && e.alive);
+        if (hasEnemies) return false;
 
-                if (this.bossSpawned) {
-                    // Settle the boss reward and any same-frame player death first.
-                    shouldCompleteLevel = true;
-                } else {
-                    // Regular wave cleared - show upgrade panel
-                    if (player.entity && player.entity.alive && !this.gameOverTriggered) {
-                        this.showUpgradePanel();
-                    } else {
-                        this.waveTimer = 3;
-                    }
-                }
-            }
+        this.waveActive = false;
+        if (this.bossSpawned) return true;
+
+        if (player.entity?.alive && !this.gameOverTriggered) {
+            this.showUpgradePanel();
+        } else {
+            this.waveTimer = 3;
         }
+        return false;
+    }
 
-        // Clean up dead entities + score + health drops
+    removeDeadEnemies(player) {
         for (let i = this.entities.length - 1; i >= 0; i--) {
             const ent = this.entities[i];
-            if (!ent.alive && !ent.isPlayer) {
-                // If dead entity is the boss, clean up phase effects
-                if (ent === this.bossEntity) {
-                    this.bossEntity = null;
-                    this.dangerZones = [];
-                }
+            if (ent.alive || ent.isPlayer) continue;
 
-                player.addScore(ent.data.atomicNum * 10);
-                const scoreBonus = ent.special.scoreBonus || 0;
-                if (scoreBonus) {
-                    player.addScore(scoreBonus);
-                    this.game.effects.scorePopup(
-                        ent.body?.position.x || 0,
-                        ent.body?.position.y || 0,
-                        scoreBonus,
-                    );
-                }
-                // Chance to spawn health pickup
-                const px = ent.body?.position.x;
-                const py = ent.body?.position.y;
-                if (px != null && py != null) {
-                    const isBoss = ent.isBoss === true;
-                    if (isBoss || Math.random() < PICKUP_CONFIG.dropChance) {
-                        this.spawnHealthPickup(px, py, ent.data.atomicNum, isBoss);
-                    }
-                }
-                this.entities.splice(i, 1);
+            if (ent === this.bossEntity) {
+                this.bossEntity = null;
+                this.dangerZones = [];
             }
-        }
 
-        // Player death takes precedence over a same-frame boss kill.
+            player.addScore(ent.data.atomicNum * 10);
+            this.applyScoreBonus(player, ent);
+            this.maybeSpawnHealthPickup(ent);
+            this.entities.splice(i, 1);
+        }
+    }
+
+    applyScoreBonus(player, ent) {
+        const scoreBonus = ent.special.scoreBonus || 0;
+        if (!scoreBonus) return;
+        player.addScore(scoreBonus);
+        this.game.effects.scorePopup(
+            ent.body?.position.x || 0,
+            ent.body?.position.y || 0,
+            scoreBonus,
+        );
+    }
+
+    maybeSpawnHealthPickup(ent) {
+        const x = ent.body?.position.x;
+        const y = ent.body?.position.y;
+        if (x == null || y == null) return;
+
+        const isBoss = ent.isBoss === true;
+        if (isBoss || Math.random() < PICKUP_CONFIG.dropChance) {
+            this.spawnHealthPickup(x, y, ent.data.atomicNum, isBoss);
+        }
+    }
+
+    settleOutcome(player, shouldCompleteLevel) {
         if (
             player.entity &&
             !player.entity.alive &&
@@ -1527,46 +1589,48 @@ class AdventureMode {
         if (shouldCompleteLevel && !this.gameOverTriggered) {
             this.completeLevel();
         }
+    }
 
-        this.projectiles = this.projectiles.filter((p) => p.alive);
-
-        // Update health pickups
+    updatePickups(dt, player) {
         for (let i = this.pickups.length - 1; i >= 0; i--) {
             const pickup = this.pickups[i];
-            // Apply gravity until grounded
-            if (!pickup.grounded) {
-                pickup.vy += 800 * dt;
-                pickup.y += pickup.vy * dt;
-                if (pickup.y >= 710) {
-                    pickup.y = 710;
-                    pickup.vy = 0;
-                    pickup.grounded = true;
-                }
-            }
+            this.updatePickupPosition(pickup, dt);
             pickup.age += dt;
             if (pickup.age > pickup.lifetime) {
                 this.pickups.splice(i, 1);
                 continue;
             }
-            // Check collection by player
-            if (player.entity && player.entity.alive) {
-                const pp = player.entity.body.position;
-                const dx = pp.x - pickup.x;
-                const dy = pp.y - pickup.y;
-                if (dx * dx + dy * dy < 30 * 30) {
-                    player.entity.health = Math.min(
-                        player.entity.maxHealth,
-                        player.entity.health + pickup.healAmount,
-                    );
-                    this.game.effects.healNumber(pickup.x, pickup.y, pickup.healAmount);
-                    this.game.effects.pickupSparkle(pickup.x, pickup.y);
-                    playSound('pickup');
-                    this.pickups.splice(i, 1);
-                }
+            if (this.collectPickup(pickup, player.entity)) {
+                this.pickups.splice(i, 1);
             }
         }
+    }
 
-        this.updateHUD();
+    updatePickupPosition(pickup, dt) {
+        if (pickup.grounded) return;
+        pickup.vy += 800 * dt;
+        pickup.y += pickup.vy * dt;
+        if (pickup.y >= 710) {
+            pickup.y = 710;
+            pickup.vy = 0;
+            pickup.grounded = true;
+        }
+    }
+
+    collectPickup(pickup, playerEntity) {
+        if (!playerEntity?.alive) return false;
+        const dx = playerEntity.body.position.x - pickup.x;
+        const dy = playerEntity.body.position.y - pickup.y;
+        if (dx * dx + dy * dy >= 30 * 30) return false;
+
+        playerEntity.health = Math.min(
+            playerEntity.maxHealth,
+            playerEntity.health + pickup.healAmount,
+        );
+        this.game.effects.healNumber(pickup.x, pickup.y, pickup.healAmount);
+        this.game.effects.pickupSparkle(pickup.x, pickup.y);
+        playSound('pickup');
+        return true;
     }
 
     completeLevel() {
@@ -1664,7 +1728,9 @@ class AdventureMode {
             this.paused ||
             this.resultShown ||
             this.state === 'complete' ||
+            this.state === 'complete_pending' ||
             this.state === 'game_over' ||
+            this.state === 'game_over_pending' ||
             this.state === 'upgrade_select'
         );
     }
@@ -1808,7 +1874,9 @@ class AdventureMode {
             const pos = this.bossEntity.body.position;
             const r = this.bossEntity.data.radius;
             const screen = camera.worldToScreen(pos.x, pos.y);
-            const shieldPulse = 1 + Math.sin(Date.now() * 0.005) * 0.15;
+            const shieldPulse = gameSettings.reducedMotion
+                ? 1
+                : 1 + Math.sin(Date.now() * 0.005) * 0.15;
 
             ctx.save();
             ctx.globalAlpha = 0.3;
@@ -1845,12 +1913,13 @@ class AdventureMode {
 
         // Platforms
         for (const p of level.platforms) {
+            const geometry = getAdventurePlatformGeometry(p);
             ctx.fillStyle = level.groundColor;
-            const s = camera.worldToScreen(p.x, p.y);
-            ctx.fillRect(s.x, s.y, p.w * camera.zoom, 20 * camera.zoom);
+            const s = camera.worldToScreen(geometry.left, geometry.top);
+            ctx.fillRect(s.x, s.y, geometry.width * camera.zoom, geometry.height * camera.zoom);
             ctx.strokeStyle = 'rgba(255,255,255,0.1)';
             ctx.lineWidth = 1;
-            ctx.strokeRect(s.x, s.y, p.w * camera.zoom, 20 * camera.zoom);
+            ctx.strokeRect(s.x, s.y, geometry.width * camera.zoom, geometry.height * camera.zoom);
         }
 
         // Background stars
@@ -1881,6 +1950,7 @@ class AdventureMode {
             overlay.setAttribute('aria-hidden', 'true');
         }
         this.clearTimers();
+        this.simulationTimers = [];
         document.querySelector('.wave-announce')?.remove();
         document.querySelector('.phase-announce')?.remove();
 
