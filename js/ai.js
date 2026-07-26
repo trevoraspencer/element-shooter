@@ -126,7 +126,7 @@ class AIController {
 
         for (const ent of entities) {
             if (ent === this.entity || !ent.alive) continue;
-            if (ent.team === this.entity.team && this.entity.team !== 'neutral') continue;
+            if (!areTeamsHostile(this.entity.team, ent.team)) continue;
 
             const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
             if (d2 < closestD2) {
@@ -292,6 +292,8 @@ class AIController {
         if (healthPct > this.behavior.retreatHealth + 0.2) {
             this.state = 'chase';
         }
+
+        capHorizontalSpeed(body, this.entity.data.speed * 0.7);
     }
 
     tryJump(engine) {

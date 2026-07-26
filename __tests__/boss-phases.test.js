@@ -127,7 +127,7 @@ describe('PHASE_OPS handler behavior', () => {
                 addStatus: vi.fn(),
             },
             game: { engine: {}, effects: { explosion: vi.fn(), toxicCloud: vi.fn() } },
-            setManagedTimeout: vi.fn((fn) => fn),
+            setSimulationTimeout: vi.fn(),
             ...overrides,
         };
         ctx.getEntityCount = () => ctx.entities.filter((e) => e.alive).length;
@@ -233,10 +233,10 @@ describe('PHASE_OPS handler behavior', () => {
         // Buffed immediately.
         expect(ctx.bossEntity.data.speed).toBe(10);
         expect(ctx.bossEntity.fireRateMultiplier).toBe(2);
-        expect(ctx.setManagedTimeout).toHaveBeenCalledTimes(1);
-        expect(ctx.setManagedTimeout).toHaveBeenCalledWith(expect.any(Function), 10000);
+        expect(ctx.setSimulationTimeout).toHaveBeenCalledTimes(1);
+        expect(ctx.setSimulationTimeout).toHaveBeenCalledWith(expect.any(Function), 10);
         // Invoke the scheduled restore fn to simulate the 10s timeout firing.
-        ctx.setManagedTimeout.mock.calls[0][0]();
+        ctx.setSimulationTimeout.mock.calls[0][0]();
         expect(ctx.bossEntity.data.speed).toBe(5);
         expect(ctx.bossEntity.fireRateMultiplier).toBe(1);
     });

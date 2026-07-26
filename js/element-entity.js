@@ -79,24 +79,31 @@ class ElementEntity {
         this.updateStatuses(dt);
         this.applyStatusEffects(dt, effects);
 
-        const special = this.special;
+        this.applyPassiveForce();
+        this.updatePassiveSpecials(entities, effects);
 
-        if (special.passiveForce) {
-            const isFloat = this.data.special === 'float';
-            if (!isFloat || !this.isGrounded()) {
-                Matter.Body.applyForce(this.body, this.body.position, {
-                    x: (special.passiveForce.x || 0) * this.body.mass,
-                    y: (special.passiveForce.y || 0) * this.body.mass,
-                });
-            }
+        if (this.isOutOfBounds()) this.die(entities, effects);
+    }
+
+    applyPassiveForce() {
+        const force = this.special.passiveForce;
+        if (!force) return;
+        if (this.data.special === 'float' && this.isGrounded()) return;
+
+        Matter.Body.applyForce(this.body, this.body.position, {
+            x: (force.x || 0) * this.body.mass,
+            y: (force.y || 0) * this.body.mass,
+        });
+    }
+
+    updatePassiveSpecials(entities, effects) {
+        const aura = this.special.aura;
+        if (aura && this.specialTimer <= 0) {
+            this.specialTimer = aura.cooldown;
+            this.applyAuraDamage(entities, effects, aura);
         }
 
-        if (special.aura && this.specialTimer <= 0) {
-            this.specialTimer = special.aura.cooldown;
-            this.applyAuraDamage(entities, effects, special.aura);
-        }
-
-        if (special.visual === 'glow' && effects) {
+        if (this.special.visual === 'glow' && effects) {
             effects.glowPulse(
                 this.body.position.x,
                 this.body.position.y,
@@ -104,19 +111,19 @@ class ElementEntity {
                 this.data.radius,
             );
         }
+    }
 
-        // Out of bounds safety net — tracks current camera world bounds so
-        // wider levels don't quietly kill entities at their edges.
-        const pos = this.body.position;
+    // Out-of-bounds safety net tracks the current camera world bounds so wider
+    // levels do not quietly kill entities at their valid edges.
+    isOutOfBounds() {
+        const { x, y } = this.body.position;
         const cam = window.game?.camera;
         const margin = 300;
         const minX = (cam?.worldMinX ?? -500) - margin;
         const maxX = (cam?.worldMaxX ?? 5000) + margin;
         const minY = (cam?.worldMinY ?? -500) - margin;
         const maxY = (cam?.worldMaxY ?? 1500) + margin;
-        if (pos.x < minX || pos.x > maxX || pos.y < minY || pos.y > maxY) {
-            this.die(entities, effects);
-        }
+        return x < minX || x > maxX || y < minY || y > maxY;
     }
 
     takeDamage(amount, effects, attacker = null, entities = null) {
@@ -190,7 +197,9 @@ class ElementEntity {
         const pos = this.body.position;
         const r2 = aura.radius * aura.radius;
         for (const ent of entities) {
-            if (ent === this || !ent.alive || ent.team === this.team) continue;
+            if (ent === this || !ent.alive || !areTeamsHostile(this.team, ent.team)) {
+                continue;
+            }
             const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
             if (d2 < r2) {
                 resolveElementDamage(ent, aura.damage, effects, this, entities, {
@@ -289,7 +298,7 @@ class ElementEntity {
                 (e) =>
                     e !== this &&
                     e.alive &&
-                    e.team !== this.team &&
+                    areTeamsHostile(this.team, e.team) &&
                     dist(pos.x, pos.y, e.body.position.x, e.body.position.y) < chain.range,
             )
             .slice(0, chain.maxTargets);
@@ -314,7 +323,9 @@ class ElementEntity {
         const pos = this.body.position;
         const r2 = magnetic.radius * magnetic.radius;
         for (const ent of entities) {
-            if (ent === this || !ent.alive || ent.team === this.team) continue;
+            if (ent === this || !ent.alive || !areTeamsHostile(this.team, ent.team)) {
+                continue;
+            }
             const d2 = dist2(pos.x, pos.y, ent.body.position.x, ent.body.position.y);
             if (d2 < r2 && d2 > 100) {
                 const ang = angle(ent.body.position.x, ent.body.position.y, pos.x, pos.y);

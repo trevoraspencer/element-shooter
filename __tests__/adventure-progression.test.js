@@ -50,6 +50,19 @@ describe('adventure progress records', () => {
         ).toBe(false);
     });
 
+    it('keeps starter content and the first level available in sparse saves', () => {
+        const progress = adventure.AdventureMode.prototype.normalizeProgress({
+            version: 2,
+            levels: [false],
+            elements: [],
+            weapons: [],
+        });
+
+        expect(progress.levels[0]).toBe(true);
+        expect(progress.elements).toEqual(expect.arrayContaining(globalThis.STARTER_ELEMENTS));
+        expect(progress.weapons).toEqual(expect.arrayContaining(globalThis.STARTER_WEAPONS));
+    });
+
     it('normalizes saved record values and clamps mastery fields', () => {
         const progress = adventure.AdventureMode.prototype.normalizeProgress({
             version: 1,
@@ -146,5 +159,44 @@ describe('adventure progress records', () => {
                 bestMastery: 2,
             }),
         ).toBe('Silver (2/3) | 1:35 | 1230 pts');
+    });
+});
+
+describe('adventure runtime geometry and outcome states', () => {
+    it('uses the rendered platform rectangle for Matter.js body centers', () => {
+        expect(adventure.getAdventurePlatformGeometry({ x: 100, y: 400, w: 200 })).toEqual({
+            left: 100,
+            top: 400,
+            width: 200,
+            height: 20,
+            centerX: 200,
+            centerY: 410,
+        });
+    });
+
+    it.each(['complete_pending', 'complete', 'game_over_pending', 'game_over', 'upgrade_select'])(
+        'pauses simulation in the %s state',
+        (state) => {
+            expect(
+                adventure.AdventureMode.prototype.isSimulationPaused.call({
+                    paused: false,
+                    resultShown: false,
+                    state,
+                }),
+            ).toBe(true);
+        },
+    );
+
+    it('expires simulation timers only after their simulated duration', () => {
+        const callback = vi.fn();
+        const context = { simulationTimers: [] };
+
+        adventure.AdventureMode.prototype.setSimulationTimeout.call(context, callback, 2);
+        adventure.AdventureMode.prototype.updateSimulationTimers.call(context, 1.5);
+        expect(callback).not.toHaveBeenCalled();
+
+        adventure.AdventureMode.prototype.updateSimulationTimers.call(context, 0.5);
+        expect(callback).toHaveBeenCalledOnce();
+        expect(context.simulationTimers).toEqual([]);
     });
 });

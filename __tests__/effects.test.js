@@ -79,3 +79,46 @@ describe('EffectsSystem combat text', () => {
         );
     });
 });
+
+describe('EffectsSystem particle integration', () => {
+    function makeParticle(overrides = {}) {
+        return {
+            x: 0,
+            y: 0,
+            vx: 0,
+            vy: 10,
+            size: 10,
+            color: '#fff',
+            life: 2,
+            maxLife: 2,
+            alpha: 1,
+            shrink: 0.96,
+            ...overrides,
+        };
+    }
+
+    it('honors an explicit zero-gravity particle', () => {
+        const effects = new effectsModule.EffectsSystem();
+        const particle = makeParticle({ gravity: 0 });
+        effects.pushParticle(particle);
+
+        effects.update(1 / 60);
+
+        expect(particle.vy).toBe(10);
+    });
+
+    it('shrinks particles consistently across different frame deltas', () => {
+        const oneFrame = new effectsModule.EffectsSystem();
+        const twoFrames = new effectsModule.EffectsSystem();
+        const coarse = makeParticle({ gravity: 0 });
+        const fine = makeParticle({ gravity: 0 });
+        oneFrame.pushParticle(coarse);
+        twoFrames.pushParticle(fine);
+
+        oneFrame.update(1 / 30);
+        twoFrames.update(1 / 60);
+        twoFrames.update(1 / 60);
+
+        expect(coarse.size).toBeCloseTo(fine.size);
+    });
+});

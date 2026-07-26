@@ -27,8 +27,8 @@ Scripts are loaded in `index.html` in dependency order. **This order matters** �
 
 ```
 Matter.js (CDN)  →  utils.js  →  elements-data.js  →  effects.js  →  element-entity.js
-→  weapons.js  →  player.js  →  ai.js  →  camera.js  →  sandbox.js  →  adventure.js
-→  ui.js  →  main.js
+→  weapons.js  →  structures.js  →  player.js  →  ai.js  →  camera.js  →  sandbox.js
+→  adventure.js  →  ui.js  →  main.js
 ```
 
 ### Browser-Only Execution
@@ -47,13 +47,14 @@ A Node.js-based dev tooling layer sits on top of the game for linting, formattin
 element-shooter/
 ├── index.html              — DOM scaffolding, CSS link, all <script> tags
 ├── css/
-│   └── style.css           — All styles (~1,322 lines)
+│   └── style.css           — All styles
 ├── js/
 │   ├── utils.js            — Constants, math/color helpers, audio system, settings
 │   ├── elements-data.js    — 46 element definitions, damage resolution, specials
 │   ├── effects.js          — Particle system, damage numbers, trails
 │   ├── element-entity.js   — Game entity wrapping Matter.js body + game state
 │   ├── weapons.js          — 6 weapon definitions, Projectile class
+│   ├── structures.js       — Placeable/destructible sandbox structures
 │   ├── player.js           — Input handling, movement, weapon firing
 │   ├── ai.js               — AI controller with 4 behavior presets
 │   ├── camera.js           — Smooth-follow camera with zoom
@@ -65,8 +66,7 @@ element-shooter/
 │   ├── setup.js            — Vitest setup: browser global mocks
 │   ├── helpers/
 │   │   └── load-source.js  — Helper to eval source files in test scope
-│   ├── utils.test.js       — Tests for utils.js (math, color, audio, settings)
-│   └── elements-data.test.js — Tests for elements-data.js (elements, damage, specials)
+│   └── *.test.js           — Runtime, data, UI, mode, and contract tests
 ├── package.json            — Dev dependencies + npm scripts
 ├── eslint.config.js        — ESLint flat config for vanilla browser JS
 ├── vitest.config.js        — Vitest configuration
@@ -147,22 +147,22 @@ Game configuration is centralized in constant objects at the top of files:
 
 All commands are run via npm. Dev dependencies must be installed first with `npm install`.
 
-| Command                    | Description                                                                                                             |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `npm run lint`             | Run ESLint on all files in `js/`. Reports errors and warnings. Exits 0 on clean codebase.                               |
-| `npm run lint:fix`         | Run ESLint with auto-fix on all files in `js/`. Applies safe fixes automatically.                                       |
-| `npm run format`           | Run Prettier to format JS, CSS, and HTML files in place.                                                                |
-| `npm run format:check`     | Run Prettier in check mode (no changes). Verifies all files are already formatted.                                      |
-| `npm test`                 | Run Vitest unit tests. Executes all `*.test.js` files in `__tests__/`. Must complete in under 10 seconds.               |
-| `npm run check:dead-code`  | Run knip dead code detection. Reports unused exports and dependencies. Uses `--no-exit-code` to report without failing. |
-| `npm run check:complexity` | Run ESLint with complexity rule set to warn at threshold 20. Reports cyclomatic complexity metrics.                     |
+| Command                    | Description                                                                                               |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `npm run lint`             | Run ESLint on all JavaScript files. Reports errors and warnings. Exits 0 on clean codebase.               |
+| `npm run lint:fix`         | Run ESLint with auto-fix on all JavaScript files. Applies safe fixes automatically.                       |
+| `npm run format`           | Run Prettier on tracked JS, CSS, HTML, Markdown, JSON, and YAML files in place.                           |
+| `npm run format:check`     | Run Prettier in check mode (no changes). Verifies all supported files are already formatted.              |
+| `npm test`                 | Run Vitest unit tests. Executes all `*.test.js` files in `__tests__/`. Must complete in under 10 seconds. |
+| `npm run check:dead-code`  | Run knip dead code detection. Fails on unused exports or dependencies.                                    |
+| `npm run check:complexity` | Run ESLint with complexity threshold 20 and fail when any function exceeds it.                            |
 
 ### Pre-Commit Hooks
 
 Husky runs `lint-staged` on every commit. Lint-staged configuration in `package.json`:
 
 - **`*.js` files**: ESLint fix + Prettier write
-- **`*.{css,html,md}` files**: Prettier write
+- **`*.{css,html,md,json,yml,yaml}` files**: Prettier write
 
 ---
 
@@ -187,6 +187,8 @@ Husky runs `lint-staged` on every commit. Lint-staged configuration in `package.
 
 - **`utils.test.js`** — Math helpers (`lerp`, `clamp`, `dist`, `angle`), color helpers (`hexToRgb`, `rgbToHex`, `colorWithAlpha`), collision categories (`CAT`), configuration constants (`BODY_SLAM_CONFIG`, `DEFAULT_SETTINGS`, `SOUND_LIMITS`, `SCREEN_SHAKE_CONFIG`), settings functions (`loadSettings`, `setAudioMuted`, `setMasterVolume`, `setReducedMotion`)
 - **`elements-data.test.js`** — Element definitions (`ELEMENTS` structure, starter elements, all element keys), sorting (`getElementsSorted`), special configs (`SPECIALS`, `getSpecialConfig`), effectiveness multipliers (`getEffectivenessMultiplier`), damage resolution (`resolveElementDamage` with armor, shield, heavy, status effects, stacking), level unlocks (`LEVEL_UNLOCKS`), status effects (`STATUS_EFFECTS`)
+- **Mode/runtime tests** — Adventure progression/final frames/boss phases, sandbox presets/walls, structures, effects, collision dispatch, and UI navigation
+- **`index-contract.test.js`** — Script order, SRI contract, local source coverage, duplicate declarations, and ordered source evaluation
 
 ### Running Tests
 
@@ -248,15 +250,15 @@ All dev dependencies use **exact version pins** (no `^` or `~` ranges):
 
 | Package                 | Version | Purpose                               |
 | ----------------------- | ------- | ------------------------------------- |
-| `eslint`                | 9.39.4  | JavaScript linter                     |
-| `@eslint/js`            | 9.39.4  | ESLint built-in rules                 |
-| `eslint-plugin-unicorn` | 64.0.0  | Naming conventions and best practices |
-| `globals`               | 17.6.0  | Browser/global variable definitions   |
-| `prettier`              | 3.8.3   | Code formatter                        |
-| `vitest`                | 3.2.4   | Unit test runner                      |
+| `eslint`                | 10.8.0  | JavaScript linter                     |
+| `@eslint/js`            | 10.0.1  | ESLint built-in rules                 |
+| `eslint-plugin-unicorn` | 72.0.0  | Naming conventions and best practices |
+| `globals`               | 17.7.0  | Browser/global variable definitions   |
+| `prettier`              | 3.9.6   | Code formatter                        |
+| `vitest`                | 4.1.10  | Unit test runner                      |
 | `husky`                 | 9.1.7   | Git hook management                   |
 | `lint-staged`           | 16.1.6  | Run linters on staged files           |
-| `knip`                  | 6.16.0  | Dead code detection                   |
+| `knip`                  | 6.29.0  | Dead code detection                   |
 
 ---
 
@@ -276,7 +278,7 @@ External dependency versions and SRI hashes are documented in `.env.example`.
 
 ## Key Rules for Making Changes
 
-1. **Never change game logic** — Only formatting changes via Prettier are allowed on existing files
+1. **Preserve behavior intentionally** — Logic changes require a clear justification and regression tests
 2. **Never add runtime dependencies** — All new packages must be dev-only
 3. **Never introduce a build step** — The game runs as static files
 4. **Respect script loading order** — Dependencies flow from top to bottom in `index.html`

@@ -4,33 +4,36 @@
   "private": true,
   "type": "module",
   "description": "2D physics-based arena shooter — vanilla JS browser game",
+  "engines": {
+    "node": "^22.13.0 || >=24.0.0"
+  },
   "scripts": {
-    "lint": "eslint js/",
-    "lint:fix": "eslint js/ --fix",
-    "format": "prettier --write \"js/**/*.js\" \"css/**/*.css\" \"index.html\"",
-    "format:check": "prettier --check \"js/**/*.js\" \"css/**/*.css\" \"index.html\"",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .prettierrc \"**/*.{js,css,html,md,json,yml,yaml}\"",
+    "format:check": "prettier --check .prettierrc \"**/*.{js,css,html,md,json,yml,yaml}\"",
     "test": "vitest run",
-    "check:dead-code": "knip --no-exit-code",
-    "check:complexity": "eslint js/ --rule 'complexity: [warn, { max: 20 }]' --format stylish",
+    "check:dead-code": "knip",
+    "check:complexity": "eslint js/ --rule 'complexity: [warn, { max: 20 }]' --max-warnings 0 --format stylish",
     "prepare": "husky"
   },
   "devDependencies": {
-    "@eslint/js": "9.39.4",
-    "eslint": "9.39.4",
-    "eslint-plugin-unicorn": "64.0.0",
-    "globals": "17.6.0",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.8.0",
+    "eslint-plugin-unicorn": "72.0.0",
+    "globals": "17.7.0",
     "husky": "9.1.7",
-    "knip": "6.16.0",
+    "knip": "6.29.0",
     "lint-staged": "16.1.6",
-    "prettier": "3.8.3",
-    "vitest": "4.1.8"
+    "prettier": "3.9.6",
+    "vitest": "4.1.10"
   },
   "lint-staged": {
     "*.js": [
       "eslint --fix",
       "prettier --write"
     ],
-    "*.{css,html,md}": [
+    "*.{css,html,md,json,yml,yaml}": [
       "prettier --write"
     ]
   },

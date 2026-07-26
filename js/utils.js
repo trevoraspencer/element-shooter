@@ -38,6 +38,11 @@ const SCREEN_SHAKE_CONFIG = {
     nuclear: 20,
 };
 
+const SIMULATION_TIMING = {
+    maxFrameDelta: 0.25,
+    maxStep: 1 / 60,
+};
+
 const DEFAULT_SETTINGS = {
     muted: false,
     masterVolume: 0.8,
@@ -125,6 +130,12 @@ function randChoice(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// Same named teams are allies; "neutral" entities are independent actors and
+// therefore remain hostile to one another when given AI or weapons.
+function areTeamsHostile(teamA, teamB) {
+    return teamA !== teamB || teamA === 'neutral';
+}
+
 // Color helpers
 function hexToRgb(hex) {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -159,16 +170,40 @@ function triggerScreenShake(intensity) {
     screenShake.intensity = Math.max(screenShake.intensity, intensity);
 }
 
-function updateScreenShake() {
+function updateScreenShake(dt = SIMULATION_TIMING.maxStep) {
     if (screenShake.intensity > 0.5) {
         screenShake.x = (Math.random() - 0.5) * screenShake.intensity;
         screenShake.y = (Math.random() - 0.5) * screenShake.intensity;
-        screenShake.intensity *= screenShake.decay;
+        screenShake.intensity *= Math.pow(
+            screenShake.decay,
+            Math.max(0, dt) / SIMULATION_TIMING.maxStep,
+        );
     } else {
         screenShake.x = 0;
         screenShake.y = 0;
         screenShake.intensity = 0;
     }
+}
+
+// Run a frame's elapsed simulation time in bounded substeps. Matter.js is most
+// stable at <=60 Hz steps, but dropping all time above 1/60s makes the game run
+// in slow motion on displays that cannot sustain 60 fps.
+function runSimulationSteps(elapsed, callback) {
+    let remaining = clamp(
+        Number.isFinite(elapsed) ? elapsed : 0,
+        0,
+        SIMULATION_TIMING.maxFrameDelta,
+    );
+    let advanced = 0;
+
+    while (remaining > Number.EPSILON) {
+        const step = Math.min(remaining, SIMULATION_TIMING.maxStep);
+        if (callback(step) === false) break;
+        advanced += step;
+        remaining -= step;
+    }
+
+    return advanced;
 }
 
 // Clamps a body's horizontal speed, preserving vertical velocity.
