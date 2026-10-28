@@ -28,6 +28,9 @@
     "prettier": "3.9.6",
     "vitest": "4.1.10"
   },
+  "overrides": {
+    "vite": "8.1.6"
+  },
   "lint-staged": {
     "*.js": [
       "eslint --fix",
